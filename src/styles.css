@@ -4,6 +4,7 @@
   --ink: #1a1917;
   --muted: #6f6a60;
   --line: #ddd8ca;
+  --edge: #c3bca9;
   --accent: #b8461e;
   --accent-ink: #ffffff;
   --good: #166534;
@@ -44,7 +45,7 @@ main {
   justify-content: center;
   gap: 6px;
   padding: 22px;
-  border: 2px dashed var(--line);
+  border: 2px dashed var(--edge);
   border-radius: 10px;
   background: var(--panel);
   transition: border-color 0.15s, background 0.15s;
@@ -72,7 +73,7 @@ main {
   display: flex;
   gap: 20px;
   padding: 14px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--edge);
   border-radius: 10px;
   background: var(--panel);
 }
@@ -81,10 +82,16 @@ main {
   flex: 1;
   min-width: 0;
   display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.settings-row,
+.toggles {
+  display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 10px 14px;
-  align-content: flex-start;
 }
 
 /* Size keeps its amount field beside it and sits between To and Quality. */
@@ -175,12 +182,27 @@ label {
 
 label.checkbox {
   flex-direction: row;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
 }
 
-label.checkbox input {
-  margin-top: 1px;
+/* Round rather than square, so they read as settings and not form fields. */
+label.checkbox input[type="checkbox"] {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  flex: none;
+  margin: 0;
+  border: 1px solid var(--edge);
+  border-radius: 50%;
+  background: var(--bg);
+  cursor: pointer;
+}
+
+label.checkbox input[type="checkbox"]:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: inset 0 0 0 3px var(--panel);
 }
 
 /* The parenthetical sits on its own line under the label rather than wrapping
@@ -210,7 +232,7 @@ input[type="range"] {
 .queue {
   flex: 1;
   overflow: auto;
-  border: 1px solid var(--line);
+  border: 1px solid var(--edge);
   border-radius: 10px;
   background: var(--panel);
 }

@@ -17,7 +17,8 @@
 
       <section class="controls">
         <div class="settings">
-          <label id="format-field">
+          <div class="settings-row">
+            <label id="format-field">
             <span>To</span>
             <select id="format">
               <option value="jpeg">JPEG</option>
@@ -49,23 +50,26 @@
             <span>Quality</span>
             <input id="quality" type="range" min="1" max="100" value="80" />
             <output id="quality-value">80</output>
-          </label>
+            </label>
+          </div>
+
+          <div class="toggles">
+            <label id="metadata-field" class="checkbox">
+              <input id="keep-metadata" type="checkbox" />
+              <span>Keep metadata (GPS, camera, AI tags)</span>
+            </label>
+
+            <label id="timestamp-field" class="checkbox">
+              <input id="timestamp" type="checkbox" />
+              <span>Add timestamp to filename</span>
+            </label>
+          </div>
         </div>
 
         <div class="output">
           <label id="destination-field">
             <span>Save to</span>
             <button id="destination" type="button" class="primary">Choose folder</button>
-          </label>
-
-          <label id="metadata-field" class="checkbox">
-            <input id="keep-metadata" type="checkbox" />
-            <span>Keep metadata<small>GPS, camera, AI tags</small></span>
-          </label>
-
-          <label id="timestamp-field" class="checkbox">
-            <input id="timestamp" type="checkbox" />
-            <span>Add timestamp to filename</span>
           </label>
         </div>
       </section>

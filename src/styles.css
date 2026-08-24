@@ -94,8 +94,11 @@ main {
 }
 
 #quality-field {
-  flex: 1;
-  min-width: 150px;
+  flex: none;
+}
+
+#quality-field input[type="range"] {
+  width: 100px;
 }
 
 #quality-field output {
@@ -207,8 +210,8 @@ th {
   top: 0;
   padding: 9px 12px;
   border-bottom: 1px solid var(--line);
-  background: var(--panel);
-  color: var(--muted);
+  background: var(--accent);
+  color: var(--accent-ink);
   font-size: 11px;
   font-weight: 600;
   text-align: left;

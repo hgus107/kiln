@@ -226,14 +226,14 @@ element<HTMLButtonElement>("browse").addEventListener("click", async () => {
 destinationButton.addEventListener("click", async () => {
   if (destination !== null) {
     destination = null;
-    destinationButton.textContent = "Beside the originals";
+    destinationButton.textContent = "Choose folder";
     return;
   }
   const chosen = await open({ directory: true, multiple: false });
   if (typeof chosen === "string") {
     destination = chosen;
     destinationButton.textContent = chosen.split("/").pop() ?? chosen;
-    destinationButton.title = `${chosen} — click to reset`;
+    destinationButton.title = `${chosen} — click to write beside the originals instead`;
   }
 });
 

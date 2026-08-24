@@ -83,8 +83,16 @@ main {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: 10px 14px;
   align-content: flex-start;
+}
+
+/* Size keeps its amount field beside it and sits between To and Quality. */
+#resize-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .settings label {
@@ -109,6 +117,12 @@ main {
 
 #resize-amount-field input {
   width: 74px;
+}
+
+#destination-field > span {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
 }
 
 .output {

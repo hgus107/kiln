@@ -116,7 +116,9 @@ main {
 
 .toast-body {
   margin-top: 12px;
-  max-height: 190px;
+  /* Exactly eight rows visible; the ninth onward scrolls. Each row is 20px tall
+     with a 5px gap: 8 rows + 7 gaps = 195px. */
+  max-height: 195px;
   overflow-y: auto;
 }
 
@@ -132,6 +134,7 @@ main {
 
 .toast-list span {
   font-size: 13px;
+  line-height: 20px;
   color: var(--muted);
 }
 

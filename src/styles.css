@@ -1,15 +1,15 @@
 :root {
-  --bg: #0b0a0a;
-  --panel: #151312;
-  --ink: #ece7e3;
-  --muted: #918a84;
-  --line: #2b2724;
-  --accent: #c2410c;
+  --bg: #f0eee6;
+  --panel: #faf9f5;
+  --ink: #1a1917;
+  --muted: #6f6a60;
+  --line: #ddd8ca;
+  --accent: #b8461e;
   --accent-ink: #ffffff;
-  --good: #4ade80;
-  --bad: #fb7185;
+  --good: #166534;
+  --bad: #9f1239;
 
-  color-scheme: dark;
+  color-scheme: light;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   font-size: 14px;
 }
@@ -66,8 +66,8 @@ main {
   color: var(--muted);
 }
 
-/* Conversion settings on the left, output destination on the right behind a
-   divider, so the two decisions read as two groups. */
+/* Settings read as one compact line, destination and its toggles sit to the
+   right behind a divider. */
 .controls {
   display: flex;
   gap: 20px;
@@ -81,28 +81,35 @@ main {
   flex: 1;
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 14px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  align-content: flex-start;
 }
 
-.settings-row {
-  display: flex;
-  gap: 12px;
+.settings label {
+  flex-direction: row;
+  align-items: center;
+  gap: 7px;
 }
 
-#format-field,
-#resize-field {
+#quality-field {
   flex: 1;
-  min-width: 0;
+  min-width: 150px;
 }
 
-#resize-amount-field {
-  width: 84px;
-  flex: none;
+#quality-field output {
+  min-width: 20px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+#resize-amount-field input {
+  width: 74px;
 }
 
 .output {
-  width: 230px;
+  width: 220px;
   flex: none;
   display: flex;
   flex-direction: column;
@@ -169,7 +176,7 @@ label.checkbox small {
 
 select,
 input[type="number"] {
-  padding: 6px 8px;
+  padding: 5px 8px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--bg);

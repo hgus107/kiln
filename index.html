@@ -17,37 +17,36 @@
 
       <section class="controls">
         <div class="settings">
-          <div class="settings-row">
-            <label id="format-field">
-              <span>Convert to</span>
-              <select id="format">
-                <option value="jpeg">JPEG</option>
-                <option value="png">PNG</option>
-                <option value="webp">WebP</option>
-                <option value="avif">AVIF</option>
-                <option value="heic">HEIC</option>
-                <option value="tiff">TIFF</option>
-              </select>
-            </label>
+          <label id="format-field">
+            <span>To</span>
+            <select id="format">
+              <option value="jpeg">JPEG</option>
+              <option value="png">PNG</option>
+              <option value="webp">WebP</option>
+              <option value="avif">AVIF</option>
+              <option value="heic">HEIC</option>
+              <option value="tiff">TIFF</option>
+            </select>
+          </label>
 
-            <label id="resize-field">
-              <span>Resize</span>
-              <select id="resize-mode">
-                <option value="original">Original size</option>
-                <option value="longest">Longest edge</option>
-                <option value="percent">Percentage</option>
-              </select>
-            </label>
+          <label id="resize-field">
+            <span>Size</span>
+            <select id="resize-mode">
+              <option value="original">Original</option>
+              <option value="longest">Longest edge</option>
+              <option value="percent">Percentage</option>
+            </select>
+          </label>
 
-            <label id="resize-amount-field" hidden>
-              <span id="resize-amount-label">Pixels</span>
-              <input id="resize-amount" type="number" value="2048" min="1" />
-            </label>
-          </div>
+          <label id="resize-amount-field" hidden>
+            <span id="resize-amount-label">Pixels</span>
+            <input id="resize-amount" type="number" value="2048" min="1" />
+          </label>
 
           <label id="quality-field">
-            <span>Quality <output id="quality-value">80</output></span>
+            <span>Quality</span>
             <input id="quality" type="range" min="1" max="100" value="80" />
+            <output id="quality-value">80</output>
           </label>
         </div>
 

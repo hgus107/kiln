@@ -79,14 +79,45 @@ main {
   color: var(--muted);
 }
 
+/* Fixed two rows. The resize amount keeps its column whether or not it is
+   showing, so turning it on does not push the row below onto a new line. */
 .controls {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  gap: 12px;
+  grid-template-columns: 1fr 1.3fr 1fr 1fr;
+  grid-template-areas:
+    "format   quality   resize      amount"
+    "metadata timestamp destination destination";
+  gap: 12px 16px;
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--panel);
+}
+
+#format-field { grid-area: format; }
+#quality-field { grid-area: quality; }
+#resize-field { grid-area: resize; }
+#resize-amount-field { grid-area: amount; }
+#metadata-field { grid-area: metadata; }
+#timestamp-field { grid-area: timestamp; }
+#destination-field { grid-area: destination; }
+
+/* The quality field hides for PNG; keep its column rather than reflowing. */
+#quality-field[hidden],
+#resize-amount-field[hidden] {
+  display: block !important;
+  visibility: hidden;
+}
+
+@media (max-width: 820px) {
+  .controls {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "format      quality"
+      "resize      amount"
+      "metadata    timestamp"
+      "destination destination";
+  }
 }
 
 label {

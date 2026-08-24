@@ -16,7 +16,7 @@
       </section>
 
       <section class="controls">
-        <label>
+        <label id="format-field">
           <span>Convert to</span>
           <select id="format">
             <option value="jpeg">JPEG</option>
@@ -33,7 +33,7 @@
           <input id="quality" type="range" min="1" max="100" value="80" />
         </label>
 
-        <label>
+        <label id="resize-field">
           <span>Resize</span>
           <select id="resize-mode">
             <option value="original">Original size</option>
@@ -47,17 +47,17 @@
           <input id="resize-amount" type="number" value="2048" min="1" />
         </label>
 
-        <label class="checkbox">
+        <label id="metadata-field" class="checkbox">
           <input id="keep-metadata" type="checkbox" />
           <span>Keep metadata (GPS, camera, AI tags)</span>
         </label>
 
-        <label class="checkbox">
+        <label id="timestamp-field" class="checkbox">
           <input id="timestamp" type="checkbox" />
           <span>Add timestamp to filename</span>
         </label>
 
-        <label>
+        <label id="destination-field">
           <span>Save to</span>
           <button id="destination" type="button" class="ghost wide">Beside the originals</button>
         </label>

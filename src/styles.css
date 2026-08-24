@@ -83,16 +83,20 @@ main {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
   gap: 10px 14px;
   align-content: flex-start;
 }
 
 /* Size keeps its amount field beside it and sits between To and Quality. */
+/* Fixed width so what follows never moves, with the size control centred in
+   it. The amount field appears inside this same width. */
 #resize-group {
+  width: 274px;
+  flex: none;
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
+  gap: 14px;
 }
 
 .settings label {
@@ -120,8 +124,6 @@ main {
 }
 
 #destination-field > span {
-  font-size: 16px;
-  font-weight: 600;
   color: var(--ink);
 }
 
@@ -144,8 +146,7 @@ main {
 
 /* Optional fields keep their space rather than collapsing it, so nothing
    around them moves when they appear. */
-#quality-field[hidden],
-#resize-amount-field[hidden] {
+#quality-field[hidden] {
   display: flex !important;
   visibility: hidden;
 }

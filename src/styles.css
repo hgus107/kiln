@@ -263,7 +263,8 @@ input[type="range"] {
 
 .queue {
   flex: 1;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   /* Elastic overscroll bounces the container and tears the sticky header away
      from the top edge on the way back. */
   overscroll-behavior: none;
@@ -301,11 +302,36 @@ td {
 }
 
 td:first-child {
-  width: 45%;
+  width: 40%;
 }
 
 .detail {
   color: var(--muted);
+}
+
+.remove-cell {
+  width: 40px;
+  padding: 8px 10px 8px 0;
+  text-align: center;
+  overflow: visible;
+}
+
+.remove {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.remove:hover {
+  background: var(--bg);
+  color: var(--bad);
 }
 
 tr.done .detail {

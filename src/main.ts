@@ -88,7 +88,21 @@ function render() {
     detail.textContent = row.detail;
     detail.className = "detail";
 
-    tr.append(name, size, dimensions, detail);
+    const remove = document.createElement("td");
+    remove.className = "remove-cell";
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.className = "remove";
+    removeButton.textContent = "×";
+    removeButton.title = "Remove from the queue";
+    removeButton.setAttribute("aria-label", `Remove ${row.info?.name ?? "file"}`);
+    removeButton.addEventListener("click", () => {
+      rows.delete(row.path);
+      render();
+    });
+    remove.append(removeButton);
+
+    tr.append(name, size, dimensions, detail, remove);
     rowsBody.append(tr);
   }
 
@@ -129,10 +143,10 @@ async function addPaths(dropped: string[]) {
   if (wanted.length === 0) {
     notify(
       dupes.length === 1
-        ? `${fileName(dupes[0])} already in the queue`
+        ? `${fileName(dupes[0])} Already In The Queue`
         : dupes.length > 1
-          ? `${dupes.length} files already in the queue`
-          : "No images found",
+          ? `${dupes.length} Files Already In The Queue`
+          : "No Images Found",
     );
     return;
   }
@@ -140,11 +154,11 @@ async function addPaths(dropped: string[]) {
   if (dupes.length > 0) {
     notify(
       dupes.length === 1
-        ? `${fileName(dupes[0])} already in the queue`
-        : `${dupes.length} files already in the queue`,
+        ? `${fileName(dupes[0])} Already In The Queue`
+        : `${dupes.length} Files Already In The Queue`,
     );
   } else if (ignored > 0) {
-    notify(`Ignored ${ignored} that ${ignored === 1 ? "is" : "are"} not an image`);
+    notify(`Ignored ${ignored} That ${ignored === 1 ? "Is" : "Are"} Not An Image`);
   }
 
   for (const path of wanted) {
@@ -224,7 +238,7 @@ async function convert() {
 
   const signature = runSignature(paths);
   if (signature === lastRunSignature) {
-    notify("Files already converted — choose a different setting to convert again");
+    notify("Files Already Converted — Choose A Different Setting To Convert Again");
     return;
   }
   pendingSignature = signature;

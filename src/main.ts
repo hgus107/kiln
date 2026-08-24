@@ -26,16 +26,18 @@ type Row = {
   detail: string;
 };
 
-const EXTENSIONS = ["heic", "heif", "avif", "webp", "jpg", "jpeg", "png", "tif", "tiff"];
+const EXTENSIONS = ["heic", "heif", "avif", "webp", "jpg", "jpeg", "png", "tif", "tiff", "jfif", "bmp"];
 
 const rows = new Map<string, Row>();
 let destination: string | null = null;
 let running = false;
+let noticeTimer = 0;
 
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 const dropZone = element<HTMLElement>("drop");
 const rowsBody = element<HTMLTableSectionElement>("rows");
+const notice = element<HTMLParagraphElement>("notice");
 const emptyNote = element<HTMLParagraphElement>("empty");
 const summary = element<HTMLSpanElement>("summary");
 const formatSelect = element<HTMLSelectElement>("format");
@@ -103,12 +105,36 @@ function render() {
   }
 }
 
-async function addPaths(paths: string[]) {
-  const wanted = paths.filter((path) => {
-    const extension = path.split(".").pop()?.toLowerCase() ?? "";
-    return EXTENSIONS.includes(extension) && !rows.has(path);
-  });
-  if (wanted.length === 0) return;
+function notify(message: string) {
+  notice.textContent = message;
+  notice.hidden = message === "";
+  window.clearTimeout(noticeTimer);
+  if (message !== "") noticeTimer = window.setTimeout(() => notify(""), 4000);
+}
+
+async function addPaths(dropped: string[]) {
+  // Rust walks any folders and drops anything that is not an image.
+  const paths = await invoke<string[]>("collect_images", { paths: dropped });
+  const wanted = paths.filter((path) => !rows.has(path));
+  const duplicates = paths.length - wanted.length;
+  const ignored = dropped.length === 0 ? 0 : Math.max(0, dropped.length - paths.length);
+
+  if (wanted.length === 0) {
+    notify(
+      duplicates > 0
+        ? `Already in the queue — ${duplicates} file${duplicates === 1 ? "" : "s"} skipped`
+        : "Nothing to add — no images found",
+    );
+    return;
+  }
+
+  notify(
+    duplicates > 0
+      ? `Added ${wanted.length}, skipped ${duplicates} already in the queue`
+      : ignored > 0
+        ? `Added ${wanted.length}, ignored ${ignored} that are not images`
+        : "",
+  );
 
   for (const path of wanted) {
     rows.set(path, { info: null, path, state: "queued", detail: "Reading…" });

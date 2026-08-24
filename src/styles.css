@@ -69,6 +69,15 @@ main {
 
 /* Settings read as one compact line, destination and its toggles sit to the
    right behind a divider. */
+.notice {
+  margin: 2px 0 0;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 13px;
+}
+
 .controls {
   display: flex;
   gap: 20px;

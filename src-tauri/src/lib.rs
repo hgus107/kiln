@@ -31,6 +31,54 @@ enum Progress {
     Skipped { path: String },
 }
 
+const SUPPORTED: [&str; 11] = [
+    "heic", "heif", "avif", "webp", "jpg", "jpeg", "png", "tif", "tiff", "jfif", "bmp",
+];
+
+/// Turns whatever was dropped into a flat list of image paths: a dropped folder
+/// is walked, and anything that is not a readable image is left out.
+#[tauri::command]
+fn collect_images(paths: Vec<String>) -> Vec<String> {
+    fn walk(path: &std::path::Path, depth: usize, found: &mut Vec<String>) {
+        if found.len() > 20_000 {
+            return;
+        }
+
+        if path.is_dir() {
+            // Deep enough for a real photo library, shallow enough that a
+            // dropped home directory cannot run away with the app.
+            if depth >= 8 {
+                return;
+            }
+            let Ok(entries) = std::fs::read_dir(path) else {
+                return;
+            };
+            let mut children: Vec<_> = entries.flatten().map(|entry| entry.path()).collect();
+            children.sort();
+            for child in children {
+                walk(&child, depth + 1, found);
+            }
+            return;
+        }
+
+        let extension = path
+            .extension()
+            .map(|e| e.to_string_lossy().to_lowercase())
+            .unwrap_or_default();
+        if SUPPORTED.contains(&extension.as_str()) {
+            if let Some(path) = path.to_str() {
+                found.push(path.to_string());
+            }
+        }
+    }
+
+    let mut found = Vec::new();
+    for path in paths {
+        walk(&PathBuf::from(path), 0, &mut found);
+    }
+    found
+}
+
 /// Reads dimensions and size for the preview table. Files that cannot be opened
 /// come back as Failed rather than taking the whole call down.
 #[tauri::command]
@@ -101,7 +149,7 @@ pub fn run() {
             let _ = VIPS.set(vips);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![probe_files, convert_batch, cancel_batch])
+        .invoke_handler(tauri::generate_handler![collect_images, probe_files, convert_batch, cancel_batch])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

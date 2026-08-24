@@ -95,7 +95,7 @@ pub fn convert_one(source: &Path, settings: &Settings) -> Result<PathBuf, String
         Resize::Original => longest,
         // Never upscale: asking for 4000px from a 1000px source returns 1000px.
         Resize::Longest { px } => px.min(longest),
-        Resize::Percent { pct } => ((longest as f64) * pct / 100.0).round() as i32,
+        Resize::Percent { pct } => ((longest as f64) * pct.clamp(1.0, 100.0) / 100.0).round() as i32,
     }
     .max(1);
 
@@ -129,7 +129,9 @@ pub fn convert_one(source: &Path, settings: &Settings) -> Result<PathBuf, String
     std::fs::create_dir_all(&destination).map_err(|e| e.to_string())?;
 
     // Resolved before the write, so an existing file is never overwritten.
-    let out_path = unique_path(&destination, source, settings.format, settings.suffix.as_deref());
+    // Reserved before the write, so neither an existing file nor another worker
+    // in this same batch is overwritten.
+    let out_path = reserve_path(&destination, source, settings.format, settings.suffix.as_deref())?;
     let out_str = out_path
         .to_str()
         .ok_or_else(|| "output path is not valid UTF-8".to_string())?;
@@ -181,17 +183,23 @@ pub fn convert_one(source: &Path, settings: &Settings) -> Result<PathBuf, String
             },
         ),
     }
-    .map_err(vips_error)?;
+    .map_err(|error| {
+        let _ = std::fs::remove_file(&out_path);
+        vips_error(error)
+    })?;
 
     Ok(out_path)
 }
 
-fn unique_path(
+/// Picks a free name and claims it by creating the file, which is what makes it
+/// safe: two workers converting `a.heic` and `a.png` into the same folder would
+/// otherwise both see `a.jpg` as free and one would silently overwrite the other.
+fn reserve_path(
     directory: &Path,
     source: &Path,
     format: OutputFormat,
     suffix: Option<&str>,
-) -> PathBuf {
+) -> Result<PathBuf, String> {
     let mut stem = source
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
@@ -202,13 +210,28 @@ fn unique_path(
     }
     let extension = format.extension();
 
-    let mut candidate = directory.join(format!("{stem}.{extension}"));
-    let mut counter = 1;
-    while candidate.exists() {
-        candidate = directory.join(format!("{stem} ({counter}).{extension}"));
-        counter += 1;
+    let mut counter = 0;
+    loop {
+        let candidate = if counter == 0 {
+            directory.join(format!("{stem}.{extension}"))
+        } else {
+            directory.join(format!("{stem} ({counter}).{extension}"))
+        };
+
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&candidate)
+        {
+            Ok(_) => return Ok(candidate),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => counter += 1,
+            Err(error) => return Err(error.to_string()),
+        }
+
+        if counter > 10_000 {
+            return Err("could not find a free filename".to_string());
+        }
     }
-    candidate
 }
 
 fn file_name(path: &Path) -> String {
@@ -358,6 +381,56 @@ mod tests {
             output.file_name().unwrap().to_string_lossy(),
             "source-20260824-131205.png"
         );
+    }
+
+    #[test]
+    fn workers_racing_for_the_same_output_name_do_not_overwrite_each_other() {
+        vips();
+        let directory = std::env::temp_dir().join("kiln-test-race");
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+
+        // Different sources, identical stem: every one wants "same.jpg".
+        let mut sources = Vec::new();
+        for index in 0..8 {
+            let folder = directory.join(format!("in{index}"));
+            std::fs::create_dir_all(&folder).unwrap();
+            let path = folder.join("same.jpg");
+            let image = ops::black(80, 60).unwrap();
+            ops::jpegsave(&image, path.to_str().unwrap()).unwrap();
+            sources.push(path);
+        }
+
+        let out = directory.join("out");
+        let options = settings(OutputFormat::Jpeg, Resize::Original, false, &out);
+        let outputs: Vec<PathBuf> = std::thread::scope(|scope| {
+            let handles: Vec<_> = sources
+                .iter()
+                .map(|source| scope.spawn(|| convert_one(source, &options).unwrap()))
+                .collect();
+            handles.into_iter().map(|handle| handle.join().unwrap()).collect()
+        });
+
+        let unique: std::collections::HashSet<_> = outputs.iter().collect();
+        assert_eq!(unique.len(), 8, "two workers claimed the same output name");
+        assert_eq!(std::fs::read_dir(&out).unwrap().count(), 8);
+    }
+
+    #[test]
+    fn a_failed_conversion_leaves_no_empty_file_behind() {
+        vips();
+        let directory = std::env::temp_dir().join("kiln-test-cleanup");
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let source = directory.join("broken.jpg");
+        std::fs::write(&source, b"not a jpeg at all").unwrap();
+
+        let _ = convert_one(
+            &source,
+            &settings(OutputFormat::Png, Resize::Original, false, &directory),
+        );
+
+        assert!(!directory.join("broken.png").exists());
     }
 
     #[test]

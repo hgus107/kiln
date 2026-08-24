@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import { alreadyMatches, type ConvertSettings, type TargetFormat, type ResizeMode } from "./skip.ts";
 
 type SourceInfo = {
   path: string;
@@ -210,41 +211,19 @@ function settings() {
   };
 }
 
-// The current settings, minus the file set — identical for every row in a run.
-const FORMAT_EXTENSIONS: Record<string, string[]> = {
-  jpeg: ["jpg", "jpeg", "jfif"],
-  png: ["png"],
-  webp: ["webp"],
-  avif: ["avif"],
-  heic: ["heic", "heif"],
-  tiff: ["tif", "tiff"],
-};
-
-// Is this file already in the format the user picked?
-function formatMatches(path: string): boolean {
-  const ext = path.split(".").pop()?.toLowerCase() ?? "";
-  return (FORMAT_EXTENSIONS[formatSelect.value] ?? []).includes(ext);
+// Reads the current control values into the shape the tested decision expects.
+function currentSettings(): ConvertSettings {
+  return {
+    format: formatSelect.value as TargetFormat,
+    resizeMode: resizeMode.value as ResizeMode,
+    resizeAmount: Number(resizeAmount.value) || 1,
+  };
 }
 
-// Would the chosen Size leave this file's pixels exactly as they are?
-function sizeMatches(row: Row): boolean {
+function rowMatches(row: Row, settings: ConvertSettings): boolean {
   if (!row.info) return false;
-  const longest = Math.max(row.info.width, row.info.height);
-  if (resizeMode.value === "longest") {
-    const px = Number(resizeAmount.value) || 1;
-    return Math.min(px, longest) === longest;
-  }
-  if (resizeMode.value === "percent") {
-    const pct = Number(resizeAmount.value) || 1;
-    return Math.round((longest * pct) / 100) === longest;
-  }
-  return true;
-}
-
-// The file already matches the target — same format, same size. Quality is not
-// stored in the file, so it cannot be part of this comparison.
-function alreadyMatches(row: Row): boolean {
-  return formatMatches(row.path) && sizeMatches(row);
+  const extension = row.path.split(".").pop()?.toLowerCase() ?? "";
+  return alreadyMatches(settings, { extension, width: row.info.width, height: row.info.height });
 }
 
 async function convert() {
@@ -257,11 +236,12 @@ async function convert() {
   if (convertible.length === 0) return;
 
   const options = settings();
+  const active = currentSettings();
 
   // Check each file's own attributes against the settings. A file already in
   // the target format and size is skipped — converting it would change nothing.
-  const toConvert = convertible.filter((row) => !alreadyMatches(row));
-  const skipped = convertible.filter((row) => alreadyMatches(row));
+  const toConvert = convertible.filter((row) => !rowMatches(row, active));
+  const skipped = convertible.filter((row) => rowMatches(row, active));
 
   const label = formatSelect.value.toUpperCase();
   for (const row of skipped) {

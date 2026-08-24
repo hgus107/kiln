@@ -227,39 +227,6 @@ function settingsSig(): string {
   });
 }
 
-const FORMAT_EXTENSIONS: Record<string, string[]> = {
-  jpeg: ["jpg", "jpeg", "jfif"],
-  png: ["png"],
-  webp: ["webp"],
-  avif: ["avif"],
-  heic: ["heic", "heif"],
-  tiff: ["tif", "tiff"],
-};
-
-function alreadyTargetFormat(path: string): boolean {
-  const ext = path.split(".").pop()?.toLowerCase() ?? "";
-  return (FORMAT_EXTENSIONS[formatSelect.value] ?? []).includes(ext);
-}
-
-// Would converting this file actually produce a different file? Format and pixel
-// dimensions and metadata are comparable; a JPEG's stored quality is not, so a
-// quality change alone does not force a same-format re-encode.
-function wouldChange(row: Row): boolean {
-  if (!row.info) return false;
-  if (!alreadyTargetFormat(row.path)) return true;
-
-  const longest = Math.max(row.info.width, row.info.height);
-  let target = longest;
-  if (resizeMode.value === "longest") target = Math.min(Number(resizeAmount.value) || 1, longest);
-  else if (resizeMode.value === "percent")
-    target = Math.round((longest * (Number(resizeAmount.value) || 1)) / 100);
-
-  const dimensionsChange = target !== longest;
-  // Stripping only counts as a change if the file actually carries metadata.
-  const metadataStrip = !keepMetadata.checked && row.info.hasMetadata;
-  return dimensionsChange || metadataStrip;
-}
-
 async function convert() {
   if (running) {
     await invoke("cancel_batch");
@@ -269,32 +236,19 @@ async function convert() {
   const convertible = [...rows.values()].filter((row) => row.info !== null);
   if (convertible.length === 0) return;
 
-  // One settings object, reused for the disk check and the conversion, so the
-  // timestamp (if any) matches between them.
   const options = settings();
   const sig = settingsSig();
 
-  // First pass: same-format files that a conversion would not change at all.
-  const noop = new Set(
-    convertible.filter((row) => !wouldChange(row)).map((row) => row.path),
+  // The only thing that blocks a file is having already been converted, this
+  // session, under these exact settings. Quality, size, format, metadata, and
+  // destination are all in the signature — change any of them and it runs again.
+  const toConvert = convertible.filter(
+    (row) => !(row.state === "done" && row.convertedSig === sig),
   );
-
-  // Second pass, on disk: files whose output already sits in the destination.
-  const candidates = convertible.filter((row) => !noop.has(row.path));
-  const onDisk = new Set(
-    await invoke<string[]>("already_converted", {
-      paths: candidates.map((row) => row.path),
-      settings: options,
-    }),
-  );
-
-  const toConvert = candidates.filter((row) => !onDisk.has(row.path));
   const skipped = convertible.filter((row) => !toConvert.includes(row));
 
-  const label = formatSelect.value.toUpperCase();
   for (const row of skipped) {
-    const reason = noop.has(row.path) ? `Already ${label}` : "Already Converted";
-    rows.set(row.path, { ...row, state: "skipped", detail: reason });
+    rows.set(row.path, { ...row, state: "skipped", detail: "Already Converted" });
   }
 
   if (toConvert.length === 0) {
@@ -306,10 +260,6 @@ async function convert() {
     );
     render();
     return;
-  }
-
-  if (skipped.length > 0) {
-    notify(`Converting ${toConvert.length}, Skipped ${skipped.length} Already Converted`);
   }
 
   runSigs = new Map(toConvert.map((row) => [row.path, sig]));

@@ -69,13 +69,22 @@ main {
 
 /* Settings read as one compact line, destination and its toggles sit to the
    right behind a divider. */
-.notice {
-  margin: 2px 0 0;
-  padding: 4px 10px;
-  border-radius: 6px;
-  background: var(--bg);
+.toast {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  max-width: 80%;
+  padding: 12px 18px;
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  background: var(--panel);
   color: var(--ink);
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: center;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
 }
 
 .controls {
@@ -93,7 +102,7 @@ main {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 32px;
 }
 
 .settings-row,
@@ -125,6 +134,7 @@ main {
 
 #quality-field {
   flex: none;
+  margin-left: 20px;
 }
 
 #quality-field input[type="range"] {
@@ -321,6 +331,11 @@ footer {
   align-items: center;
   gap: 10px;
   color: var(--muted);
+}
+
+#summary {
+  color: var(--ink);
+  font-weight: 600;
 }
 
 .spacer {

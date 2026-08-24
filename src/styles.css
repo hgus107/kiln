@@ -1,0 +1,228 @@
+:root {
+  --bg: #f6f5f3;
+  --panel: #ffffff;
+  --ink: #1c1a19;
+  --muted: #6d6763;
+  --line: #ddd8d3;
+  --accent: #9a3412;
+  --accent-ink: #ffffff;
+  --good: #166534;
+  --bad: #9f1239;
+
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 14px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #191716;
+    --panel: #221f1d;
+    --ink: #ede9e6;
+    --muted: #9a928c;
+    --line: #35302c;
+    --accent: #c2410c;
+    --good: #4ade80;
+    --bad: #fb7185;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* label sets display: flex below, which would otherwise beat the hidden attribute. */
+[hidden] {
+  display: none !important;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+main {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  height: 100vh;
+  padding: 16px;
+}
+
+.drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 22px;
+  border: 2px dashed var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.drop.over {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+}
+
+.drop-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.drop-note {
+  margin: 0;
+  color: var(--muted);
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+label.checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+select,
+input[type="number"] {
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+}
+
+input[type="range"] {
+  accent-color: var(--accent);
+}
+
+.queue {
+  flex: 1;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th {
+  position: sticky;
+  top: 0;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 0;
+}
+
+td:first-child {
+  width: 45%;
+}
+
+.detail {
+  color: var(--muted);
+}
+
+tr.done .detail {
+  color: var(--good);
+}
+
+tr.failed .detail {
+  color: var(--bad);
+}
+
+tr.working .detail {
+  color: var(--accent);
+}
+
+.empty {
+  margin: 0;
+  padding: 22px;
+  color: var(--muted);
+  text-align: center;
+}
+
+footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+}
+
+.spacer {
+  flex: 1;
+}
+
+button {
+  padding: 7px 14px;
+  border-radius: 7px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.ghost {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+}
+
+.ghost.wide {
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.primary {
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.primary.cancel {
+  background: var(--muted);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

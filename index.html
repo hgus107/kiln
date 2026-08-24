@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kiln</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+
+  <body>
+    <main>
+      <section id="drop" class="drop">
+        <p class="drop-title">Drop images here</p>
+        <p class="drop-note">HEIC, AVIF, WebP, JPEG, PNG, TIFF — nothing leaves this machine</p>
+        <button id="browse" type="button" class="ghost">Choose files</button>
+      </section>
+
+      <section class="controls">
+        <label>
+          <span>Convert to</span>
+          <select id="format">
+            <option value="jpeg">JPEG</option>
+            <option value="png">PNG</option>
+            <option value="webp">WebP</option>
+            <option value="avif">AVIF</option>
+            <option value="heic">HEIC</option>
+            <option value="tiff">TIFF</option>
+          </select>
+        </label>
+
+        <label id="quality-field">
+          <span>Quality <output id="quality-value">80</output></span>
+          <input id="quality" type="range" min="1" max="100" value="80" />
+        </label>
+
+        <label>
+          <span>Resize</span>
+          <select id="resize-mode">
+            <option value="original">Original size</option>
+            <option value="longest">Longest edge</option>
+            <option value="percent">Percentage</option>
+          </select>
+        </label>
+
+        <label id="resize-amount-field" hidden>
+          <span id="resize-amount-label">Pixels</span>
+          <input id="resize-amount" type="number" value="2048" min="1" />
+        </label>
+
+        <label class="checkbox">
+          <input id="keep-metadata" type="checkbox" />
+          <span>Keep metadata (GPS, camera, AI tags)</span>
+        </label>
+
+        <label>
+          <span>Save to</span>
+          <button id="destination" type="button" class="ghost wide">Beside the originals</button>
+        </label>
+      </section>
+
+      <section class="queue">
+        <table>
+          <thead>
+            <tr>
+              <th>File</th>
+              <th>Size</th>
+              <th>Dimensions</th>
+              <th>Result</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <p id="empty" class="empty">Nothing queued yet.</p>
+      </section>
+
+      <footer>
+        <span id="summary"></span>
+        <span class="spacer"></span>
+        <button id="clear" type="button" class="ghost">Clear</button>
+        <button id="convert" type="button" class="primary" disabled>Convert</button>
+      </footer>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

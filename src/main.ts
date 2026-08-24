@@ -285,7 +285,7 @@ element<HTMLButtonElement>("browse").addEventListener("click", async () => {
 destinationButton.addEventListener("click", async () => {
   if (destination !== null) {
     destination = null;
-    destinationButton.textContent = "Choose folder";
+    destinationButton.textContent = "Choose Folder";
     return;
   }
   const chosen = await open({ directory: true, multiple: false });

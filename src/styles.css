@@ -4,7 +4,7 @@
   --ink: #1a1917;
   --muted: #6f6a60;
   --line: #ddd8ca;
-  --edge: #c3bca9;
+  --edge: #8a8478;
   --accent: #b8461e;
   --accent-ink: #ffffff;
   --good: #166534;
@@ -65,6 +65,7 @@ main {
 .drop-note {
   margin: 0;
   color: var(--muted);
+  font-weight: 600;
 }
 
 /* Settings read as one compact line, destination and its toggles sit to the

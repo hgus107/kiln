@@ -24,6 +24,9 @@ type Row = {
   path: string;
   state: "queued" | "working" | "done" | "failed" | "skipped";
   detail: string;
+  // The settings this row was last converted under, so an unchanged repeat is
+  // recognised as already done.
+  convertedSig?: string;
 };
 
 const EXTENSIONS = ["heic", "heif", "avif", "webp", "jpg", "jpeg", "png", "tif", "tiff", "jfif", "bmp"];
@@ -32,11 +35,9 @@ const rows = new Map<string, Row>();
 let destination: string | null = null;
 let running = false;
 let noticeTimer = 0;
-let pendingSignature: string | null = null;
-// Signature of the last completed run: the settings plus the exact set of files
-// converted. A second Convert with the same signature is a no-op, so we block it
-// and say why. Changing a control or the file set makes the signature differ.
-let lastRunSignature: string | null = null;
+// The settings signature each in-flight file is being converted under, read back
+// when it completes.
+let runSigs = new Map<string, string>();
 
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -212,7 +213,8 @@ function settings() {
   };
 }
 
-function runSignature(paths: string[]): string {
+// The current settings, minus the file set — identical for every row in a run.
+function settingsSig(): string {
   return JSON.stringify({
     format: formatSelect.value,
     quality: qualityInput.value,
@@ -221,8 +223,39 @@ function runSignature(paths: string[]): string {
     keepMetadata: keepMetadata.checked,
     timestamp: timestamp.checked,
     destination,
-    paths: [...paths].sort(),
   });
+}
+
+const FORMAT_EXTENSIONS: Record<string, string[]> = {
+  jpeg: ["jpg", "jpeg", "jfif"],
+  png: ["png"],
+  webp: ["webp"],
+  avif: ["avif"],
+  heic: ["heic", "heif"],
+  tiff: ["tif", "tiff"],
+};
+
+function alreadyTargetFormat(path: string): boolean {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  return (FORMAT_EXTENSIONS[formatSelect.value] ?? []).includes(ext);
+}
+
+// Would converting this file actually produce a different file? Format and pixel
+// dimensions and metadata are comparable; a JPEG's stored quality is not, so a
+// quality change alone does not force a same-format re-encode.
+function wouldChange(row: Row): boolean {
+  if (!row.info) return false;
+  if (!alreadyTargetFormat(row.path)) return true;
+
+  const longest = Math.max(row.info.width, row.info.height);
+  let target = longest;
+  if (resizeMode.value === "longest") target = Math.min(Number(resizeAmount.value) || 1, longest);
+  else if (resizeMode.value === "percent")
+    target = Math.round((longest * (Number(resizeAmount.value) || 1)) / 100);
+
+  const dimensionsChange = target !== longest;
+  const metadataStrip = !keepMetadata.checked;
+  return dimensionsChange || metadataStrip;
 }
 
 async function convert() {
@@ -231,21 +264,38 @@ async function convert() {
     return;
   }
 
-  const paths = [...rows.values()]
-    .filter((row) => row.info !== null)
-    .map((row) => row.path);
-  if (paths.length === 0) return;
+  const convertible = [...rows.values()].filter((row) => row.info !== null);
+  if (convertible.length === 0) return;
 
-  const signature = runSignature(paths);
-  if (signature === lastRunSignature) {
-    notify("Files Already Converted — Choose A Different Setting To Convert Again");
+  const sig = settingsSig();
+  const toConvert = convertible.filter(
+    (row) => !(row.state === "done" && row.convertedSig === sig) && wouldChange(row),
+  );
+  const skipped = convertible.filter((row) => !toConvert.includes(row));
+
+  if (toConvert.length === 0) {
+    const names = skipped.map((row) => row.info!.name);
+    notify(
+      names.length <= 5
+        ? `Already Converted — ${names.join(", ")}`
+        : `${skipped.length} Of ${convertible.length} Files Already Converted`,
+    );
     return;
   }
-  pendingSignature = signature;
 
-  for (const path of paths) {
-    const row = rows.get(path)!;
-    rows.set(path, { ...row, state: "working", detail: "Converting…" });
+  if (skipped.length > 0) {
+    notify(`Converting ${toConvert.length}, Skipped ${skipped.length} Already Converted`);
+  }
+
+  runSigs = new Map(toConvert.map((row) => [row.path, sig]));
+  for (const row of toConvert) {
+    rows.set(row.path, { ...row, state: "working", detail: "Converting…" });
+  }
+  // Same-format no-ops that were never converted get a clear reason.
+  for (const row of skipped) {
+    if (row.state === "queued" && !wouldChange(row)) {
+      rows.set(row.path, { ...row, state: "skipped", detail: `Already ${formatSelect.value.toUpperCase()}` });
+    }
   }
 
   running = true;
@@ -253,7 +303,7 @@ async function convert() {
   convertButton.classList.add("cancel");
   render();
 
-  await invoke("convert_batch", { paths, settings: settings() });
+  await invoke("convert_batch", { paths: toConvert.map((row) => row.path), settings: settings() });
 }
 
 listen<Progress>("conversion-progress", ({ payload }) => {
@@ -263,7 +313,7 @@ listen<Progress>("conversion-progress", ({ payload }) => {
   if (payload.status === "done") {
     const saved = row.info?.bytes ? Math.round((1 - payload.bytes / row.info.bytes) * 100) : 0;
     const change = saved > 0 ? `${formatBytes(payload.bytes)}, ${saved}% smaller` : formatBytes(payload.bytes);
-    rows.set(payload.path, { ...row, state: "done", detail: change });
+    rows.set(payload.path, { ...row, state: "done", detail: change, convertedSig: runSigs.get(payload.path) });
   } else if (payload.status === "failed") {
     rows.set(payload.path, { ...row, state: "failed", detail: payload.error });
   } else {
@@ -274,8 +324,6 @@ listen<Progress>("conversion-progress", ({ payload }) => {
 
 listen("conversion-finished", () => {
   running = false;
-  // Remember what this run was, so an unchanged repeat is caught.
-  lastRunSignature = pendingSignature;
   convertButton.textContent = "Convert";
   convertButton.classList.remove("cancel");
   render();

@@ -16,53 +16,57 @@
       </section>
 
       <section class="controls">
-        <label id="format-field">
-          <span>Convert to</span>
-          <select id="format">
-            <option value="jpeg">JPEG</option>
-            <option value="png">PNG</option>
-            <option value="webp">WebP</option>
-            <option value="avif">AVIF</option>
-            <option value="heic">HEIC</option>
-            <option value="tiff">TIFF</option>
-          </select>
-        </label>
+        <div class="settings">
+          <div class="settings-row">
+            <label id="format-field">
+              <span>Convert to</span>
+              <select id="format">
+                <option value="jpeg">JPEG</option>
+                <option value="png">PNG</option>
+                <option value="webp">WebP</option>
+                <option value="avif">AVIF</option>
+                <option value="heic">HEIC</option>
+                <option value="tiff">TIFF</option>
+              </select>
+            </label>
 
-        <label id="quality-field">
-          <span>Quality <output id="quality-value">80</output></span>
-          <input id="quality" type="range" min="1" max="100" value="80" />
-        </label>
+            <label id="resize-field">
+              <span>Resize</span>
+              <select id="resize-mode">
+                <option value="original">Original size</option>
+                <option value="longest">Longest edge</option>
+                <option value="percent">Percentage</option>
+              </select>
+            </label>
 
-        <div id="resize-group">
-          <label id="resize-field">
-            <span>Resize</span>
-            <select id="resize-mode">
-              <option value="original">Original size</option>
-              <option value="longest">Longest edge</option>
-              <option value="percent">Percentage</option>
-            </select>
-          </label>
+            <label id="resize-amount-field" hidden>
+              <span id="resize-amount-label">Pixels</span>
+              <input id="resize-amount" type="number" value="2048" min="1" />
+            </label>
+          </div>
 
-          <label id="resize-amount-field" hidden>
-            <span id="resize-amount-label">Pixels</span>
-            <input id="resize-amount" type="number" value="2048" min="1" />
+          <label id="quality-field">
+            <span>Quality <output id="quality-value">80</output></span>
+            <input id="quality" type="range" min="1" max="100" value="80" />
           </label>
         </div>
 
-        <label id="metadata-field" class="checkbox">
-          <input id="keep-metadata" type="checkbox" />
-          <span>Keep metadata<small>GPS, camera, AI tags</small></span>
-        </label>
+        <div class="output">
+          <label id="destination-field">
+            <span>Save to</span>
+            <button id="destination" type="button" class="ghost">Beside the originals</button>
+          </label>
 
-        <label id="timestamp-field" class="checkbox">
-          <input id="timestamp" type="checkbox" />
-          <span>Add timestamp to filename</span>
-        </label>
+          <label id="metadata-field" class="checkbox">
+            <input id="keep-metadata" type="checkbox" />
+            <span>Keep metadata<small>GPS, camera, AI tags</small></span>
+          </label>
 
-        <label id="destination-field">
-          <span>Save to</span>
-          <button id="destination" type="button" class="ghost">Beside the originals</button>
-        </label>
+          <label id="timestamp-field" class="checkbox">
+            <input id="timestamp" type="checkbox" />
+            <span>Add timestamp to filename</span>
+          </label>
+        </div>
       </section>
 
       <section class="queue">

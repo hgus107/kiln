@@ -83,9 +83,9 @@ main {
    showing, so turning it on does not push the row below onto a new line. */
 .controls {
   display: grid;
-  grid-template-columns: 1fr 1.3fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr 1.3fr;
   grid-template-areas:
-    "format   quality   resize      amount"
+    "format   resize    amount      quality"
     "metadata timestamp destination destination";
   gap: 12px 16px;
   padding: 14px;
@@ -113,8 +113,8 @@ main {
   .controls {
     grid-template-columns: 1fr 1fr;
     grid-template-areas:
-      "format      quality"
-      "resize      amount"
+      "format      resize"
+      "amount      quality"
       "metadata    timestamp"
       "destination destination";
   }
@@ -249,12 +249,12 @@ button {
 }
 
 #destination-field {
-  align-items: flex-end;
-  text-align: right;
+  width: fit-content;
+  margin-left: auto;
+  align-items: flex-start;
 }
 
 #destination {
-  align-self: flex-end;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;

@@ -83,10 +83,10 @@ main {
    showing, so turning it on does not push the row below onto a new line. */
 .controls {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1.3fr;
+  grid-template-columns: repeat(3, 1fr);
   grid-template-areas:
-    "format   resize    amount      quality"
-    "metadata timestamp destination destination";
+    "format   resize    quality"
+    "metadata timestamp destination";
   gap: 12px 16px;
   padding: 14px;
   border: 1px solid var(--line);
@@ -96,16 +96,33 @@ main {
 
 #format-field { grid-area: format; }
 #quality-field { grid-area: quality; }
-#resize-field { grid-area: resize; }
-#resize-amount-field { grid-area: amount; }
+#resize-group { grid-area: resize; }
 #metadata-field { grid-area: metadata; }
 #timestamp-field { grid-area: timestamp; }
 #destination-field { grid-area: destination; }
 
-/* The quality field hides for PNG; keep its column rather than reflowing. */
+/* Resize and its amount share one column, so the row stays three even
+   columns whether or not the amount is showing. */
+#resize-group {
+  display: flex;
+  gap: 10px;
+}
+
+#resize-field {
+  flex: 1;
+  min-width: 0;
+}
+
+#resize-amount-field {
+  width: 78px;
+  flex: none;
+}
+
+/* Optional fields keep their space rather than collapsing it, so nothing
+   below them moves when they appear. */
 #quality-field[hidden],
 #resize-amount-field[hidden] {
-  display: block !important;
+  display: flex !important;
   visibility: hidden;
 }
 
@@ -114,7 +131,7 @@ main {
     grid-template-columns: 1fr 1fr;
     grid-template-areas:
       "format      resize"
-      "amount      quality"
+      "quality     quality"
       "metadata    timestamp"
       "destination destination";
   }

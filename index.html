@@ -33,19 +33,21 @@
           <input id="quality" type="range" min="1" max="100" value="80" />
         </label>
 
-        <label id="resize-field">
-          <span>Resize</span>
-          <select id="resize-mode">
-            <option value="original">Original size</option>
-            <option value="longest">Longest edge</option>
-            <option value="percent">Percentage</option>
-          </select>
-        </label>
+        <div id="resize-group">
+          <label id="resize-field">
+            <span>Resize</span>
+            <select id="resize-mode">
+              <option value="original">Original size</option>
+              <option value="longest">Longest edge</option>
+              <option value="percent">Percentage</option>
+            </select>
+          </label>
 
-        <label id="resize-amount-field" hidden>
-          <span id="resize-amount-label">Pixels</span>
-          <input id="resize-amount" type="number" value="2048" min="1" />
-        </label>
+          <label id="resize-amount-field" hidden>
+            <span id="resize-amount-label">Pixels</span>
+            <input id="resize-amount" type="number" value="2048" min="1" />
+          </label>
+        </div>
 
         <label id="metadata-field" class="checkbox">
           <input id="keep-metadata" type="checkbox" />

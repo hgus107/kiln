@@ -85,8 +85,8 @@ main {
   display: grid;
   grid-template-columns: 1fr 1.3fr 1fr 1fr;
   grid-template-areas:
-    "format      quality  resize    amount"
-    "destination metadata timestamp timestamp";
+    "format   quality   resize      amount"
+    "metadata timestamp destination destination";
   gap: 12px 16px;
   padding: 14px;
   border: 1px solid var(--line);
@@ -115,8 +115,8 @@ main {
     grid-template-areas:
       "format      quality"
       "resize      amount"
-      "destination destination"
-      "metadata    timestamp";
+      "metadata    timestamp"
+      "destination destination";
   }
 }
 
@@ -248,8 +248,13 @@ button {
   color: var(--ink);
 }
 
+#destination-field {
+  align-items: flex-end;
+  text-align: right;
+}
+
 #destination {
-  align-self: flex-start;
+  align-self: flex-end;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;

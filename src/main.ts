@@ -8,6 +8,7 @@ type SourceInfo = {
   bytes: number;
   width: number;
   height: number;
+  hasMetadata: boolean;
 };
 
 type Probe =
@@ -254,7 +255,8 @@ function wouldChange(row: Row): boolean {
     target = Math.round((longest * (Number(resizeAmount.value) || 1)) / 100);
 
   const dimensionsChange = target !== longest;
-  const metadataStrip = !keepMetadata.checked;
+  // Stripping only counts as a change if the file actually carries metadata.
+  const metadataStrip = !keepMetadata.checked && row.info.hasMetadata;
   return dimensionsChange || metadataStrip;
 }
 
@@ -267,11 +269,33 @@ async function convert() {
   const convertible = [...rows.values()].filter((row) => row.info !== null);
   if (convertible.length === 0) return;
 
+  // One settings object, reused for the disk check and the conversion, so the
+  // timestamp (if any) matches between them.
+  const options = settings();
   const sig = settingsSig();
-  const toConvert = convertible.filter(
-    (row) => !(row.state === "done" && row.convertedSig === sig) && wouldChange(row),
+
+  // First pass: same-format files that a conversion would not change at all.
+  const noop = new Set(
+    convertible.filter((row) => !wouldChange(row)).map((row) => row.path),
   );
+
+  // Second pass, on disk: files whose output already sits in the destination.
+  const candidates = convertible.filter((row) => !noop.has(row.path));
+  const onDisk = new Set(
+    await invoke<string[]>("already_converted", {
+      paths: candidates.map((row) => row.path),
+      settings: options,
+    }),
+  );
+
+  const toConvert = candidates.filter((row) => !onDisk.has(row.path));
   const skipped = convertible.filter((row) => !toConvert.includes(row));
+
+  const label = formatSelect.value.toUpperCase();
+  for (const row of skipped) {
+    const reason = noop.has(row.path) ? `Already ${label}` : "Already Converted";
+    rows.set(row.path, { ...row, state: "skipped", detail: reason });
+  }
 
   if (toConvert.length === 0) {
     const names = skipped.map((row) => row.info!.name);
@@ -280,6 +304,7 @@ async function convert() {
         ? `Already Converted — ${names.join(", ")}`
         : `${skipped.length} Of ${convertible.length} Files Already Converted`,
     );
+    render();
     return;
   }
 
@@ -291,19 +316,13 @@ async function convert() {
   for (const row of toConvert) {
     rows.set(row.path, { ...row, state: "working", detail: "Converting…" });
   }
-  // Same-format no-ops that were never converted get a clear reason.
-  for (const row of skipped) {
-    if (row.state === "queued" && !wouldChange(row)) {
-      rows.set(row.path, { ...row, state: "skipped", detail: `Already ${formatSelect.value.toUpperCase()}` });
-    }
-  }
 
   running = true;
   convertButton.textContent = "Cancel";
   convertButton.classList.add("cancel");
   render();
 
-  await invoke("convert_batch", { paths: toConvert.map((row) => row.path), settings: settings() });
+  await invoke("convert_batch", { paths: toConvert.map((row) => row.path), settings: options });
 }
 
 listen<Progress>("conversion-progress", ({ payload }) => {

@@ -79,6 +79,38 @@ fn collect_images(paths: Vec<String>) -> Vec<String> {
     found
 }
 
+/// Which of these files already has its converted output sitting in the
+/// destination. With a timestamp suffix every name is unique, so nothing can
+/// pre-exist and the list is empty. This is the authoritative "already
+/// converted" check — it survives clearing the queue and restarting the app.
+#[tauri::command]
+fn already_converted(paths: Vec<String>, settings: Settings) -> Vec<String> {
+    if settings.suffix.is_some() {
+        return Vec::new();
+    }
+
+    paths
+        .into_iter()
+        .filter(|path| {
+            let source = PathBuf::from(path);
+            let directory = match &settings.destination {
+                Some(directory) => PathBuf::from(directory),
+                None => match source.parent() {
+                    Some(parent) => parent.to_path_buf(),
+                    None => return false,
+                },
+            };
+            let stem = source
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            directory
+                .join(format!("{stem}.{}", settings.format.extension()))
+                .exists()
+        })
+        .collect()
+}
+
 /// Reads dimensions and size for the preview table. Files that cannot be opened
 /// come back as Failed rather than taking the whole call down.
 #[tauri::command]
@@ -149,7 +181,7 @@ pub fn run() {
             let _ = VIPS.set(vips);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![collect_images, probe_files, convert_batch, cancel_batch])
+        .invoke_handler(tauri::generate_handler![collect_images, already_converted, probe_files, convert_batch, cancel_batch])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

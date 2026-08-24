@@ -66,6 +66,10 @@ pub struct SourceInfo {
     pub bytes: u64,
     pub width: i32,
     pub height: i32,
+    /// True when the file carries metadata worth stripping — GPS, camera, dates,
+    /// author, XMP/IPTC, or C2PA/AI tags. The trivial exif-data block that every
+    /// encoder writes (orientation, resolution) does not count.
+    pub has_metadata: bool,
 }
 
 pub fn probe(path: &Path) -> Result<SourceInfo, String> {
@@ -78,7 +82,35 @@ pub fn probe(path: &Path) -> Result<SourceInfo, String> {
         bytes,
         width: image.get_width(),
         height: image.get_height(),
+        has_metadata: has_meaningful_metadata(&image),
     })
+}
+
+/// Whether stripping would actually remove anything a user cares about. Every
+/// JPEG carries a small exif-data block (orientation, resolution) that is not
+/// worth a re-encode; we look instead for the identifying fields.
+fn has_meaningful_metadata(image: &VipsImage) -> bool {
+    const FIELDS: [&str; 14] = [
+        "xmp-data",
+        "iptc-data",
+        "exif-ifd0-Make",
+        "exif-ifd0-Model",
+        "exif-ifd0-Artist",
+        "exif-ifd0-Copyright",
+        "exif-ifd0-DateTime",
+        "exif-ifd0-Software",
+        "exif-ifd0-ImageDescription",
+        "exif-ifd2-DateTimeOriginal",
+        "exif-ifd2-DateTimeDigitized",
+        "exif-ifd3-GPSLatitude",
+        "exif-ifd3-GPSLongitude",
+        "exif-ifd3-GPSInfo",
+    ];
+
+    let present = FIELDS.iter().any(|field| image.get_as_string(field).is_ok());
+    // get_as_string on an absent field sets the global error buffer.
+    unsafe { libvips::bindings::vips_error_clear() };
+    present
 }
 
 /// Converts one file and returns where it was written. The source is only ever read.
@@ -381,6 +413,39 @@ mod tests {
             output.file_name().unwrap().to_string_lossy(),
             "source-20260824-131205.png"
         );
+    }
+
+    #[test]
+    fn metadata_detection_ignores_the_trivial_block_but_finds_real_tags() {
+        vips();
+        let directory = std::env::temp_dir().join("kiln-test-meta");
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+
+        // A plain encode carries only orientation/resolution — not worth stripping.
+        let plain = directory.join("plain.jpg");
+        let image = ops::black(64, 64).unwrap();
+        ops::jpegsave(&image, plain.to_str().unwrap()).unwrap();
+        assert!(!probe(&plain).unwrap().has_metadata);
+
+        // Attach a camera make and GPS with exiftool, if it is installed; then
+        // there is something worth stripping.
+        let tagged = directory.join("tagged.jpg");
+        std::fs::copy(&plain, &tagged).unwrap();
+        let tagged_ok = std::process::Command::new("exiftool")
+            .args([
+                "-Make=Canon",
+                "-GPSLatitude=51.5",
+                "-GPSLatitudeRef=N",
+                "-overwrite_original",
+            ])
+            .arg(&tagged)
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false);
+        if tagged_ok {
+            assert!(probe(&tagged).unwrap().has_metadata);
+        }
     }
 
     #[test]

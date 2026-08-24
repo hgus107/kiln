@@ -85,8 +85,8 @@ main {
   display: grid;
   grid-template-columns: 1fr 1.3fr 1fr 1fr;
   grid-template-areas:
-    "format   quality   resize      amount"
-    "metadata timestamp destination destination";
+    "format      quality  resize    amount"
+    "destination metadata timestamp timestamp";
   gap: 12px 16px;
   padding: 14px;
   border: 1px solid var(--line);
@@ -115,8 +115,8 @@ main {
     grid-template-areas:
       "format      quality"
       "resize      amount"
-      "metadata    timestamp"
-      "destination destination";
+      "destination destination"
+      "metadata    timestamp";
   }
 }
 
@@ -130,8 +130,21 @@ label {
 
 label.checkbox {
   flex-direction: row;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
+}
+
+label.checkbox input {
+  margin-top: 1px;
+}
+
+/* The parenthetical sits on its own line under the label rather than wrapping
+   mid-phrase, which is what made the row heights jump around. */
+label.checkbox small {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  opacity: 0.75;
 }
 
 select,
@@ -235,8 +248,9 @@ button {
   color: var(--ink);
 }
 
-.ghost.wide {
-  width: 100%;
+#destination {
+  align-self: flex-start;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -76,17 +76,70 @@ main {
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 100;
-  min-width: 480px;
+  min-width: 360px;
   max-width: 90%;
-  padding: 18px 24px;
+  padding: 20px 24px 18px;
   border: 1px solid var(--edge);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--panel);
   color: var(--ink);
-  font-size: 14px;
-  font-weight: 500;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.22);
+}
+
+.toast-close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.toast-close:hover {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.toast-title {
+  margin: 0 20px 0;
   text-align: center;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.toast-body {
+  margin-top: 12px;
+  max-height: 190px;
+  overflow-y: auto;
+}
+
+.toast-body:empty {
+  display: none;
+}
+
+.toast-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.toast-list span {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.toast-line {
+  margin: 0;
+  text-align: center;
+  font-size: 14px;
+  color: var(--muted);
 }
 
 .controls {

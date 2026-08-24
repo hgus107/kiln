@@ -8,7 +8,11 @@
   </head>
 
   <body>
-    <div id="notice" class="toast" role="status" hidden></div>
+    <div id="notice" class="toast" role="dialog" aria-modal="true" hidden>
+      <button id="notice-close" class="toast-close" type="button" aria-label="Close">×</button>
+      <p id="notice-title" class="toast-title"></p>
+      <div id="notice-body" class="toast-body"></div>
+    </div>
     <main>
       <section id="drop" class="drop">
         <p class="drop-title">Drop Images Here</p>

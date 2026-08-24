@@ -33,7 +33,6 @@ const EXTENSIONS = ["heic", "heif", "avif", "webp", "jpg", "jpeg", "png", "tif",
 const rows = new Map<string, Row>();
 let destination: string | null = null;
 let running = false;
-let noticeTimer = 0;
 // The settings signature each in-flight file is being converted under, read back
 // when it completes.
 
@@ -41,7 +40,9 @@ const element = <T extends HTMLElement>(id: string) => document.getElementById(i
 
 const dropZone = element<HTMLElement>("drop");
 const rowsBody = element<HTMLTableSectionElement>("rows");
-const notice = element<HTMLParagraphElement>("notice");
+const notice = element<HTMLDivElement>("notice");
+const noticeTitle = element<HTMLParagraphElement>("notice-title");
+const noticeBody = element<HTMLDivElement>("notice-body");
 const emptyNote = element<HTMLParagraphElement>("empty");
 const summary = element<HTMLSpanElement>("summary");
 const formatSelect = element<HTMLSelectElement>("format");
@@ -115,19 +116,42 @@ function render() {
   if (total === 0) {
     summary.textContent = "";
   } else if (running) {
-    summary.textContent = `Converting — ${done + failed} of ${total}`;
+    summary.textContent = `Converting — ${done + failed} Of ${total}`;
   } else if (done || failed) {
     summary.textContent = `${done} CONVERTED${failed ? `, ${failed} FAILED` : ""}`;
   } else {
-    summary.textContent = `${total} file${total === 1 ? "" : "s"} queued`;
+    summary.textContent = `${total} File${total === 1 ? "" : "s"} Queued`;
   }
 }
 
-function notify(message: string) {
-  notice.textContent = message;
-  notice.hidden = message === "";
-  window.clearTimeout(noticeTimer);
-  if (message !== "") noticeTimer = window.setTimeout(() => notify(""), 4000);
+// One popup for every message: a centred Title-Case heading, an optional body
+// (a left-aligned list of filenames, or one centred line), and a close button.
+// It never dismisses itself — the user closes it.
+function popup(title: string, body: { names?: string[]; line?: string } = {}) {
+  noticeTitle.textContent = title;
+  noticeBody.replaceChildren();
+
+  if (body.names && body.names.length > 0) {
+    const list = document.createElement("div");
+    list.className = "toast-list";
+    for (const name of body.names) {
+      const span = document.createElement("span");
+      span.textContent = name;
+      list.append(span);
+    }
+    noticeBody.append(list);
+  } else if (body.line) {
+    const line = document.createElement("p");
+    line.className = "toast-line";
+    line.textContent = body.line;
+    noticeBody.append(line);
+  }
+
+  notice.hidden = false;
+}
+
+function closePopup() {
+  notice.hidden = true;
 }
 
 const fileName = (path: string) => path.split("/").pop() ?? path;
@@ -140,24 +164,18 @@ async function addPaths(dropped: string[]) {
   const ignored = dropped.length === 0 ? 0 : Math.max(0, dropped.length - paths.length);
 
   if (wanted.length === 0) {
-    notify(
-      dupes.length === 1
-        ? `${fileName(dupes[0])} Already In The Queue`
-        : dupes.length > 1
-          ? `${dupes.length} Files Already In The Queue`
-          : "No Images Found",
-    );
+    if (dupes.length > 0) {
+      popup("Already In The Queue", { names: dupes.map(fileName) });
+    } else {
+      popup("No Images Found");
+    }
     return;
   }
 
   if (dupes.length > 0) {
-    notify(
-      dupes.length === 1
-        ? `${fileName(dupes[0])} Already In The Queue`
-        : `${dupes.length} Files Already In The Queue`,
-    );
+    popup("Already In The Queue", { names: dupes.map(fileName) });
   } else if (ignored > 0) {
-    notify(`Ignored ${ignored} That ${ignored === 1 ? "Is" : "Are"} Not An Image`);
+    popup("Not Images", { line: `${ignored} File${ignored === 1 ? "" : "s"} Ignored` });
   }
 
   for (const path of wanted) {
@@ -249,12 +267,7 @@ async function convert() {
   }
 
   if (toConvert.length === 0) {
-    const names = skipped.map((row) => row.info!.name);
-    notify(
-      names.length <= 5
-        ? `Already ${label} — ${names.join(", ")}`
-        : `${skipped.length} Of ${convertible.length} Files Already ${label}`,
-    );
+    popup("Already Converted", { names: skipped.map((row) => row.info!.name) });
     render();
     return;
   }
@@ -338,6 +351,11 @@ resizeMode.addEventListener("change", () => {
   resizeLabel.textContent = mode === "percent" ? "Percent" : "Pixels";
   resizeAmount.value = mode === "percent" ? "50" : "2048";
   resizeAmount.max = mode === "percent" ? "100" : "";
+});
+
+element<HTMLButtonElement>("notice-close").addEventListener("click", closePopup);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closePopup();
 });
 
 clearButton.addEventListener("click", () => {

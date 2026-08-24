@@ -52,6 +52,9 @@ pub struct Settings {
     pub keep_metadata: bool,
     /// None writes each result beside its original.
     pub destination: Option<String>,
+    /// Appended to every name in the batch, before the extension. The frontend
+    /// stamps one value per run so a batch shares it.
+    pub suffix: Option<String>,
 }
 
 /// What the frontend shows in a row before anything is converted.
@@ -126,7 +129,7 @@ pub fn convert_one(source: &Path, settings: &Settings) -> Result<PathBuf, String
     std::fs::create_dir_all(&destination).map_err(|e| e.to_string())?;
 
     // Resolved before the write, so an existing file is never overwritten.
-    let out_path = unique_path(&destination, source, settings.format);
+    let out_path = unique_path(&destination, source, settings.format, settings.suffix.as_deref());
     let out_str = out_path
         .to_str()
         .ok_or_else(|| "output path is not valid UTF-8".to_string())?;
@@ -183,11 +186,20 @@ pub fn convert_one(source: &Path, settings: &Settings) -> Result<PathBuf, String
     Ok(out_path)
 }
 
-fn unique_path(directory: &Path, source: &Path, format: OutputFormat) -> PathBuf {
-    let stem = source
+fn unique_path(
+    directory: &Path,
+    source: &Path,
+    format: OutputFormat,
+    suffix: Option<&str>,
+) -> PathBuf {
+    let mut stem = source
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "image".to_string());
+    if let Some(suffix) = suffix {
+        stem.push('-');
+        stem.push_str(suffix);
+    }
     let extension = format.extension();
 
     let mut candidate = directory.join(format!("{stem}.{extension}"));
@@ -252,6 +264,7 @@ mod tests {
             resize,
             keep_metadata,
             destination: Some(out.to_string_lossy().into_owned()),
+            suffix: None,
         }
     }
 
@@ -327,6 +340,24 @@ mod tests {
         assert_ne!(first, second);
         assert!(first.exists() && second.exists());
         assert_eq!(second.file_name().unwrap().to_string_lossy(), "source (1).png");
+    }
+
+    #[test]
+    fn a_timestamp_suffix_lands_before_the_extension() {
+        vips();
+        let directory = std::env::temp_dir().join("kiln-test-suffix");
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let source = fixture(&directory);
+
+        let mut options = settings(OutputFormat::Png, Resize::Original, false, &directory);
+        options.suffix = Some("20260824-131205".to_string());
+        let output = convert_one(&source, &options).unwrap();
+
+        assert_eq!(
+            output.file_name().unwrap().to_string_lossy(),
+            "source-20260824-131205.png"
+        );
     }
 
     #[test]

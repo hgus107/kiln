@@ -47,6 +47,7 @@ const resizeField = element<HTMLLabelElement>("resize-amount-field");
 const resizeLabel = element<HTMLSpanElement>("resize-amount-label");
 const resizeAmount = element<HTMLInputElement>("resize-amount");
 const keepMetadata = element<HTMLInputElement>("keep-metadata");
+const timestamp = element<HTMLInputElement>("timestamp");
 const destinationButton = element<HTMLButtonElement>("destination");
 const convertButton = element<HTMLButtonElement>("convert");
 const clearButton = element<HTMLButtonElement>("clear");
@@ -130,6 +131,16 @@ async function addPaths(paths: string[]) {
   render();
 }
 
+/// Colons and slashes are illegal or displayed wrongly in filenames, so the
+/// stamp is digits only: 20260824-131205, which also sorts correctly.
+function stamp(): string {
+  const now = new Date();
+  const pad = (value: number) => String(value).padStart(2, "0");
+  const date = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+  const time = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  return `${date}-${time}`;
+}
+
 function settings() {
   const mode = resizeMode.value;
   const amount = Number(resizeAmount.value) || 1;
@@ -145,6 +156,8 @@ function settings() {
           : { mode: "original" },
     keepMetadata: keepMetadata.checked,
     destination,
+    // One stamp for the whole run, so every file from a batch carries the same one.
+    suffix: timestamp.checked ? stamp() : null,
   };
 }
 

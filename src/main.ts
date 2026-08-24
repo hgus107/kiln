@@ -104,7 +104,7 @@ function render() {
   } else if (running) {
     summary.textContent = `Converting — ${done + failed} of ${total}`;
   } else if (done || failed) {
-    summary.textContent = `${done} converted${failed ? `, ${failed} failed` : ""}`;
+    summary.textContent = `${done} CONVERTED${failed ? `, ${failed} FAILED` : ""}`;
   } else {
     summary.textContent = `${total} file${total === 1 ? "" : "s"} queued`;
   }
@@ -117,29 +117,35 @@ function notify(message: string) {
   if (message !== "") noticeTimer = window.setTimeout(() => notify(""), 4000);
 }
 
+const fileName = (path: string) => path.split("/").pop() ?? path;
+
 async function addPaths(dropped: string[]) {
   // Rust walks any folders and drops anything that is not an image.
   const paths = await invoke<string[]>("collect_images", { paths: dropped });
   const wanted = paths.filter((path) => !rows.has(path));
-  const duplicates = paths.length - wanted.length;
+  const dupes = paths.filter((path) => rows.has(path));
   const ignored = dropped.length === 0 ? 0 : Math.max(0, dropped.length - paths.length);
 
   if (wanted.length === 0) {
     notify(
-      duplicates > 0
-        ? `Already in the queue — ${duplicates} file${duplicates === 1 ? "" : "s"} skipped`
-        : "Nothing to add — no images found",
+      dupes.length === 1
+        ? `${fileName(dupes[0])} already in the queue`
+        : dupes.length > 1
+          ? `${dupes.length} files already in the queue`
+          : "No images found",
     );
     return;
   }
 
-  notify(
-    duplicates > 0
-      ? `Added ${wanted.length}, skipped ${duplicates} already in the queue`
-      : ignored > 0
-        ? `Added ${wanted.length}, ignored ${ignored} that are not images`
-        : "",
-  );
+  if (dupes.length > 0) {
+    notify(
+      dupes.length === 1
+        ? `${fileName(dupes[0])} already in the queue`
+        : `${dupes.length} files already in the queue`,
+    );
+  } else if (ignored > 0) {
+    notify(`Ignored ${ignored} that ${ignored === 1 ? "is" : "are"} not an image`);
+  }
 
   for (const path of wanted) {
     rows.set(path, { info: null, path, state: "queued", detail: "Reading…" });
@@ -218,7 +224,7 @@ async function convert() {
 
   const signature = runSignature(paths);
   if (signature === lastRunSignature) {
-    notify("Already converted with these settings — change To, Size, or Quality to run again");
+    notify("Files already converted — choose a different setting to convert again");
     return;
   }
   pendingSignature = signature;

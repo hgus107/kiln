@@ -25,9 +25,6 @@ type Row = {
   path: string;
   state: "queued" | "working" | "done" | "failed" | "skipped";
   detail: string;
-  // The settings this row was last converted under, so an unchanged repeat is
-  // recognised as already done.
-  convertedSig?: string;
 };
 
 const EXTENSIONS = ["heic", "heif", "avif", "webp", "jpg", "jpeg", "png", "tif", "tiff", "jfif", "bmp"];
@@ -38,7 +35,6 @@ let running = false;
 let noticeTimer = 0;
 // The settings signature each in-flight file is being converted under, read back
 // when it completes.
-let runSigs = new Map<string, string>();
 
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -215,16 +211,40 @@ function settings() {
 }
 
 // The current settings, minus the file set — identical for every row in a run.
-function settingsSig(): string {
-  return JSON.stringify({
-    format: formatSelect.value,
-    quality: qualityInput.value,
-    resizeMode: resizeMode.value,
-    resizeAmount: resizeAmount.value,
-    keepMetadata: keepMetadata.checked,
-    timestamp: timestamp.checked,
-    destination,
-  });
+const FORMAT_EXTENSIONS: Record<string, string[]> = {
+  jpeg: ["jpg", "jpeg", "jfif"],
+  png: ["png"],
+  webp: ["webp"],
+  avif: ["avif"],
+  heic: ["heic", "heif"],
+  tiff: ["tif", "tiff"],
+};
+
+// Is this file already in the format the user picked?
+function formatMatches(path: string): boolean {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  return (FORMAT_EXTENSIONS[formatSelect.value] ?? []).includes(ext);
+}
+
+// Would the chosen Size leave this file's pixels exactly as they are?
+function sizeMatches(row: Row): boolean {
+  if (!row.info) return false;
+  const longest = Math.max(row.info.width, row.info.height);
+  if (resizeMode.value === "longest") {
+    const px = Number(resizeAmount.value) || 1;
+    return Math.min(px, longest) === longest;
+  }
+  if (resizeMode.value === "percent") {
+    const pct = Number(resizeAmount.value) || 1;
+    return Math.round((longest * pct) / 100) === longest;
+  }
+  return true;
+}
+
+// The file already matches the target — same format, same size. Quality is not
+// stored in the file, so it cannot be part of this comparison.
+function alreadyMatches(row: Row): boolean {
+  return formatMatches(row.path) && sizeMatches(row);
 }
 
 async function convert() {
@@ -237,32 +257,28 @@ async function convert() {
   if (convertible.length === 0) return;
 
   const options = settings();
-  const sig = settingsSig();
 
-  // The only thing that blocks a file is having already been converted, this
-  // session, under these exact settings. Quality, size, format, metadata, and
-  // destination are all in the signature — change any of them and it runs again.
-  const toConvert = convertible.filter(
-    (row) => !(row.state === "done" && row.convertedSig === sig),
-  );
-  const skipped = convertible.filter((row) => !toConvert.includes(row));
+  // Check each file's own attributes against the settings. A file already in
+  // the target format and size is skipped — converting it would change nothing.
+  const toConvert = convertible.filter((row) => !alreadyMatches(row));
+  const skipped = convertible.filter((row) => alreadyMatches(row));
 
+  const label = formatSelect.value.toUpperCase();
   for (const row of skipped) {
-    rows.set(row.path, { ...row, state: "skipped", detail: "Already Converted" });
+    rows.set(row.path, { ...row, state: "skipped", detail: `Already ${label}` });
   }
 
   if (toConvert.length === 0) {
     const names = skipped.map((row) => row.info!.name);
     notify(
       names.length <= 5
-        ? `Already Converted — ${names.join(", ")}`
-        : `${skipped.length} Of ${convertible.length} Files Already Converted`,
+        ? `Already ${label} — ${names.join(", ")}`
+        : `${skipped.length} Of ${convertible.length} Files Already ${label}`,
     );
     render();
     return;
   }
 
-  runSigs = new Map(toConvert.map((row) => [row.path, sig]));
   for (const row of toConvert) {
     rows.set(row.path, { ...row, state: "working", detail: "Converting…" });
   }
@@ -282,7 +298,7 @@ listen<Progress>("conversion-progress", ({ payload }) => {
   if (payload.status === "done") {
     const saved = row.info?.bytes ? Math.round((1 - payload.bytes / row.info.bytes) * 100) : 0;
     const change = saved > 0 ? `${formatBytes(payload.bytes)}, ${saved}% smaller` : formatBytes(payload.bytes);
-    rows.set(payload.path, { ...row, state: "done", detail: change, convertedSig: runSigs.get(payload.path) });
+    rows.set(payload.path, { ...row, state: "done", detail: change });
   } else if (payload.status === "failed") {
     rows.set(payload.path, { ...row, state: "failed", detail: payload.error });
   } else {

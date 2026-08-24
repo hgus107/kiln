@@ -104,16 +104,17 @@ main {
   gap: 10px 14px;
 }
 
-/* Size keeps its amount field beside it and sits between To and Quality. */
-/* Fixed width so what follows never moves, with the size control centred in
-   it. The amount field appears inside this same width. */
+/* Fixed width, Size pinned at the left, and a permanently reserved slot for the
+   amount field. So Size never moves, and Quality after it never moves, whether
+   or not the amount field is showing. */
 #resize-group {
   width: 274px;
   flex: none;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 14px;
+  margin-left: 40px;
 }
 
 .settings label {
@@ -134,6 +135,10 @@ main {
   min-width: 20px;
   color: var(--ink);
   font-variant-numeric: tabular-nums;
+}
+
+#resize-amount-field {
+  width: 120px;
 }
 
 #resize-amount-field input {
@@ -164,7 +169,8 @@ main {
 
 /* Optional fields keep their space rather than collapsing it, so nothing
    around them moves when they appear. */
-#quality-field[hidden] {
+#quality-field[hidden],
+#resize-amount-field[hidden] {
   display: flex !important;
   visibility: hidden;
 }

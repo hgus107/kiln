@@ -32,6 +32,11 @@ const rows = new Map<string, Row>();
 let destination: string | null = null;
 let running = false;
 let noticeTimer = 0;
+let pendingSignature: string | null = null;
+// Signature of the last completed run: the settings plus the exact set of files
+// converted. A second Convert with the same signature is a no-op, so we block it
+// and say why. Changing a control or the file set makes the signature differ.
+let lastRunSignature: string | null = null;
 
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -187,6 +192,19 @@ function settings() {
   };
 }
 
+function runSignature(paths: string[]): string {
+  return JSON.stringify({
+    format: formatSelect.value,
+    quality: qualityInput.value,
+    resizeMode: resizeMode.value,
+    resizeAmount: resizeAmount.value,
+    keepMetadata: keepMetadata.checked,
+    timestamp: timestamp.checked,
+    destination,
+    paths: [...paths].sort(),
+  });
+}
+
 async function convert() {
   if (running) {
     await invoke("cancel_batch");
@@ -197,6 +215,13 @@ async function convert() {
     .filter((row) => row.info !== null)
     .map((row) => row.path);
   if (paths.length === 0) return;
+
+  const signature = runSignature(paths);
+  if (signature === lastRunSignature) {
+    notify("Already converted with these settings — change To, Size, or Quality to run again");
+    return;
+  }
+  pendingSignature = signature;
 
   for (const path of paths) {
     const row = rows.get(path)!;
@@ -229,6 +254,8 @@ listen<Progress>("conversion-progress", ({ payload }) => {
 
 listen("conversion-finished", () => {
   running = false;
+  // Remember what this run was, so an unchanged repeat is caught.
+  lastRunSignature = pendingSignature;
   convertButton.textContent = "Convert";
   convertButton.classList.remove("cancel");
   render();

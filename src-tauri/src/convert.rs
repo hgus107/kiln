@@ -39,6 +39,8 @@ pub enum Resize {
     Longest { px: i32 },
     /// Scale to a percentage of the original.
     Percent { pct: f64 },
+    /// Produce the exact requested width and height.
+    Exact { width: i32, height: i32 },
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -55,6 +57,9 @@ pub struct Settings {
     /// Appended to every name in the batch, before the extension. The frontend
     /// stamps one value per run so a batch shares it.
     pub suffix: Option<String>,
+    /// An explicit output file path for a single-file save. When set it wins
+    /// over `destination`; the source itself is never overwritten.
+    pub output_path: Option<String>,
 }
 
 /// What the frontend shows in a row before anything is converted.
@@ -73,7 +78,9 @@ pub struct SourceInfo {
 }
 
 pub fn probe(path: &Path) -> Result<SourceInfo, String> {
-    let path_str = path.to_str().ok_or_else(|| "path is not valid UTF-8".to_string())?;
+    let path_str = path
+        .to_str()
+        .ok_or_else(|| "path is not valid UTF-8".to_string())?;
     let image = VipsImage::new_from_file(path_str).map_err(vips_error)?;
     let bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
     Ok(SourceInfo {
@@ -107,7 +114,9 @@ fn has_meaningful_metadata(image: &VipsImage) -> bool {
         "exif-ifd3-GPSInfo",
     ];
 
-    let present = FIELDS.iter().any(|field| image.get_as_string(field).is_ok());
+    let present = FIELDS
+        .iter()
+        .any(|field| image.get_as_string(field).is_ok());
     // get_as_string on an absent field sets the global error buffer.
     unsafe { libvips::bindings::vips_error_clear() };
     present
@@ -115,7 +124,9 @@ fn has_meaningful_metadata(image: &VipsImage) -> bool {
 
 /// Converts one file and returns where it was written. The source is only ever read.
 pub fn convert_one(source: &Path, settings: &Settings) -> Result<PathBuf, String> {
-    let source_str = source.to_str().ok_or_else(|| "path is not valid UTF-8".to_string())?;
+    let source_str = source
+        .to_str()
+        .ok_or_else(|| "path is not valid UTF-8".to_string())?;
 
     // Longest edge is the same number whichever way the photo is rotated, so it
     // survives the autorotation that thumbnail applies below.
@@ -123,13 +134,25 @@ pub fn convert_one(source: &Path, settings: &Settings) -> Result<PathBuf, String
     let longest = probe.get_width().max(probe.get_height());
     drop(probe);
 
-    let target = match settings.resize {
-        Resize::Original => longest,
+    let (target_width, target_height, thumbnail_size) = match settings.resize {
+        Resize::Original => (longest, longest, ops::Size::Down),
         // Never upscale: asking for 4000px from a 1000px source returns 1000px.
-        Resize::Longest { px } => px.min(longest),
-        Resize::Percent { pct } => ((longest as f64) * pct.clamp(1.0, 100.0) / 100.0).round() as i32,
-    }
-    .max(1);
+        Resize::Longest { px } => {
+            let target = px.min(longest).max(1);
+            (target, target, ops::Size::Down)
+        }
+        Resize::Percent { pct } => {
+            let target = ((longest as f64) * pct.clamp(1.0, 100.0) / 100.0).round() as i32;
+            let target = target.max(1);
+            (target, target, ops::Size::Down)
+        }
+        Resize::Exact { width, height } => {
+            if !exact_dimensions_valid(width, height) {
+                return Err("dimensions must be between 1024 px and 7680 px".to_string());
+            }
+            (width, height, ops::Size::Force)
+        }
+    };
 
     // Stripping metadata keeps the colour profile, because deleting a profile
     // shifts colours rather than removing information. Everything else goes:
@@ -144,46 +167,83 @@ pub fn convert_one(source: &Path, settings: &Settings) -> Result<PathBuf, String
     // reduced resolution where the format allows, applies the orientation tag
     // so phone photos are not sideways, and never holds the whole image.
     let options = ops::ThumbnailOptions {
-        height: target,
-        size: ops::Size::Down,
+        height: target_height,
+        size: thumbnail_size,
         output_profile,
         ..ops::ThumbnailOptions::default()
     };
-    let image = ops::thumbnail_with_opts(source_str, target, &options).map_err(vips_error)?;
+    let image = ops::thumbnail_with_opts(source_str, target_width, &options).map_err(vips_error)?;
 
-    let destination = match &settings.destination {
-        Some(dir) => PathBuf::from(dir),
-        None => source
-            .parent()
-            .ok_or_else(|| "file has no parent directory".to_string())?
-            .to_path_buf(),
+    // A single-file save names the exact output; a batch names a folder and keeps
+    // each source's own name.
+    let out_path = if let Some(explicit) = &settings.output_path {
+        let explicit = PathBuf::from(explicit);
+        if let Some(parent) = explicit.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        // Never clobber the source itself; fall back to a free name beside it.
+        if explicit == *source {
+            let directory = explicit
+                .parent()
+                .ok_or_else(|| "file has no parent directory".to_string())?;
+            reserve_path(
+                directory,
+                source,
+                settings.format,
+                settings.suffix.as_deref(),
+            )?
+        } else {
+            explicit
+        }
+    } else {
+        let destination = match &settings.destination {
+            Some(dir) => PathBuf::from(dir),
+            None => source
+                .parent()
+                .ok_or_else(|| "file has no parent directory".to_string())?
+                .to_path_buf(),
+        };
+        std::fs::create_dir_all(&destination).map_err(|e| e.to_string())?;
+        // Reserved before the write, so neither an existing file nor another
+        // worker in this same batch is overwritten.
+        reserve_path(
+            &destination,
+            source,
+            settings.format,
+            settings.suffix.as_deref(),
+        )?
     };
-    std::fs::create_dir_all(&destination).map_err(|e| e.to_string())?;
-
-    // Resolved before the write, so an existing file is never overwritten.
-    // Reserved before the write, so neither an existing file nor another worker
-    // in this same batch is overwritten.
-    let out_path = reserve_path(&destination, source, settings.format, settings.suffix.as_deref())?;
     let out_str = out_path
         .to_str()
         .ok_or_else(|| "output path is not valid UTF-8".to_string())?;
 
-    let quality = settings.quality.clamp(1, 100);
+    let quality = normalized_quality(settings.quality);
     match settings.format {
         OutputFormat::Jpeg => ops::jpegsave_with_opts(
             &image,
             out_str,
-            &ops::JpegsaveOptions { q: quality, keep, ..Default::default() },
+            &ops::JpegsaveOptions {
+                q: quality,
+                keep,
+                ..Default::default()
+            },
         ),
         OutputFormat::Png => ops::pngsave_with_opts(
             &image,
             out_str,
-            &ops::PngsaveOptions { keep, ..Default::default() },
+            &ops::PngsaveOptions {
+                keep,
+                ..Default::default()
+            },
         ),
         OutputFormat::Webp => ops::webpsave_with_opts(
             &image,
             out_str,
-            &ops::WebpsaveOptions { q: quality, keep, ..Default::default() },
+            &ops::WebpsaveOptions {
+                q: quality,
+                keep,
+                ..Default::default()
+            },
         ),
         OutputFormat::Avif => ops::heifsave_with_opts(
             &image,
@@ -221,6 +281,14 @@ pub fn convert_one(source: &Path, settings: &Settings) -> Result<PathBuf, String
     })?;
 
     Ok(out_path)
+}
+
+fn normalized_quality(quality: i32) -> i32 {
+    quality.clamp(40, 100)
+}
+
+fn exact_dimensions_valid(width: i32, height: i32) -> bool {
+    (1024..=7680).contains(&width) && (1024..=7680).contains(&height)
 }
 
 /// Picks a free name and claims it by creating the file, which is what makes it
@@ -280,7 +348,10 @@ fn vips_error(error: libvips::error::Error) -> String {
         if buffer.is_null() {
             String::new()
         } else {
-            std::ffi::CStr::from_ptr(buffer).to_string_lossy().trim().to_string()
+            std::ffi::CStr::from_ptr(buffer)
+                .to_string_lossy()
+                .trim()
+                .to_string()
         }
     };
     unsafe { libvips::bindings::vips_error_clear() };
@@ -320,6 +391,7 @@ mod tests {
             keep_metadata,
             destination: Some(out.to_string_lossy().into_owned()),
             suffix: None,
+            output_path: None,
         }
     }
 
@@ -333,7 +405,12 @@ mod tests {
 
         let output = convert_one(
             &source,
-            &settings(OutputFormat::Webp, Resize::Longest { px: 800 }, false, &directory),
+            &settings(
+                OutputFormat::Webp,
+                Resize::Longest { px: 800 },
+                false,
+                &directory,
+            ),
         )
         .unwrap();
 
@@ -341,6 +418,79 @@ mod tests {
         let result = VipsImage::new_from_file(output.to_str().unwrap()).unwrap();
         assert_eq!(result.get_width(), 800);
         assert_eq!(result.get_height(), 450);
+    }
+
+    #[test]
+    fn converts_to_exact_width_and_height() {
+        vips();
+        let directory = std::env::temp_dir().join("kiln-test-exact");
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let source = fixture(&directory);
+
+        let output = convert_one(
+            &source,
+            &settings(
+                OutputFormat::Webp,
+                Resize::Exact {
+                    width: 1024,
+                    height: 1200,
+                },
+                false,
+                &directory,
+            ),
+        )
+        .unwrap();
+
+        let result = VipsImage::new_from_file(output.to_str().unwrap()).unwrap();
+        assert_eq!((result.get_width(), result.get_height()), (1024, 1200));
+    }
+
+    #[test]
+    fn converts_every_supported_output_format() {
+        vips();
+        let directory = std::env::temp_dir().join("kiln-test-all-formats");
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let source = fixture(&directory);
+
+        for format in [
+            OutputFormat::Jpeg,
+            OutputFormat::Png,
+            OutputFormat::Webp,
+            OutputFormat::Avif,
+            OutputFormat::Heic,
+            OutputFormat::Tiff,
+        ] {
+            let output_dir = directory.join(format.extension());
+            std::fs::create_dir_all(&output_dir).unwrap();
+            let output = convert_one(
+                &source,
+                &settings(format, Resize::Original, false, &output_dir),
+            )
+            .unwrap_or_else(|error| panic!("{} conversion failed: {error}", format.extension()));
+            assert_eq!(output.extension().unwrap(), format.extension());
+            assert!(VipsImage::new_from_file(output.to_str().unwrap()).is_ok());
+        }
+    }
+
+    #[test]
+    fn exact_dimension_boundaries_are_enforced_without_allocating_giant_images() {
+        assert!(exact_dimensions_valid(1024, 1024));
+        assert!(exact_dimensions_valid(7680, 7680));
+        assert!(!exact_dimensions_valid(1023, 1024));
+        assert!(!exact_dimensions_valid(1024, 1023));
+        assert!(!exact_dimensions_valid(7681, 1024));
+        assert!(!exact_dimensions_valid(1024, 7681));
+    }
+
+    #[test]
+    fn compression_quality_is_clamped_to_the_ui_contract() {
+        assert_eq!(normalized_quality(39), 40);
+        assert_eq!(normalized_quality(40), 40);
+        assert_eq!(normalized_quality(80), 80);
+        assert_eq!(normalized_quality(100), 100);
+        assert_eq!(normalized_quality(101), 100);
     }
 
     #[test]
@@ -353,7 +503,12 @@ mod tests {
 
         let output = convert_one(
             &source,
-            &settings(OutputFormat::Jpeg, Resize::Longest { px: 5000 }, false, &directory),
+            &settings(
+                OutputFormat::Jpeg,
+                Resize::Longest { px: 5000 },
+                false,
+                &directory,
+            ),
         )
         .unwrap();
 
@@ -371,7 +526,12 @@ mod tests {
 
         let output = convert_one(
             &source,
-            &settings(OutputFormat::Png, Resize::Percent { pct: 25.0 }, false, &directory),
+            &settings(
+                OutputFormat::Png,
+                Resize::Percent { pct: 25.0 },
+                false,
+                &directory,
+            ),
         )
         .unwrap();
 
@@ -394,7 +554,38 @@ mod tests {
 
         assert_ne!(first, second);
         assert!(first.exists() && second.exists());
-        assert_eq!(second.file_name().unwrap().to_string_lossy(), "source (1).png");
+        assert_eq!(
+            second.file_name().unwrap().to_string_lossy(),
+            "source (1).png"
+        );
+    }
+
+    #[test]
+    fn conversion_never_modifies_the_original_source() {
+        vips();
+        let directory = std::env::temp_dir().join("kiln-test-source-untouched");
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        let source = fixture(&directory);
+        let original_bytes = std::fs::read(&source).unwrap();
+        let output_dir = directory.join("scratch");
+
+        let output = convert_one(
+            &source,
+            &settings(
+                OutputFormat::Webp,
+                Resize::Exact {
+                    width: 1024,
+                    height: 1024,
+                },
+                false,
+                &output_dir,
+            ),
+        )
+        .unwrap();
+
+        assert_ne!(output, source);
+        assert_eq!(std::fs::read(&source).unwrap(), original_bytes);
     }
 
     #[test]
@@ -449,6 +640,61 @@ mod tests {
     }
 
     #[test]
+    fn keep_metadata_preserves_xmp_while_unchecked_strips_it() {
+        vips();
+        let directory = std::env::temp_dir().join("kiln-test-keep-metadata");
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+
+        let plain = fixture(&directory);
+        let xmp = directory.join("test.xmp");
+        std::fs::write(
+            &xmp,
+            r#"<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+    <rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" dc:creator="Kiln Test" />
+  </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>"#,
+        )
+        .unwrap();
+
+        let tagged = directory.join("tagged.jpg");
+        let tagged_ok = std::process::Command::new("magick")
+            .arg(&plain)
+            .arg("-profile")
+            .arg(&xmp)
+            .arg(&tagged)
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false);
+        if !tagged_ok {
+            return;
+        }
+        assert!(probe(&tagged).unwrap().has_metadata);
+
+        let kept_dir = directory.join("kept");
+        let stripped_dir = directory.join("stripped");
+        std::fs::create_dir_all(&kept_dir).unwrap();
+        std::fs::create_dir_all(&stripped_dir).unwrap();
+
+        let kept = convert_one(
+            &tagged,
+            &settings(OutputFormat::Jpeg, Resize::Original, true, &kept_dir),
+        )
+        .unwrap();
+        let stripped = convert_one(
+            &tagged,
+            &settings(OutputFormat::Jpeg, Resize::Original, false, &stripped_dir),
+        )
+        .unwrap();
+
+        assert!(probe(&kept).unwrap().has_metadata);
+        assert!(!probe(&stripped).unwrap().has_metadata);
+    }
+
+    #[test]
     fn workers_racing_for_the_same_output_name_do_not_overwrite_each_other() {
         vips();
         let directory = std::env::temp_dir().join("kiln-test-race");
@@ -473,7 +719,10 @@ mod tests {
                 .iter()
                 .map(|source| scope.spawn(|| convert_one(source, &options).unwrap()))
                 .collect();
-            handles.into_iter().map(|handle| handle.join().unwrap()).collect()
+            handles
+                .into_iter()
+                .map(|handle| handle.join().unwrap())
+                .collect()
         });
 
         let unique: std::collections::HashSet<_> = outputs.iter().collect();

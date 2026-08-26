@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "package:mac": "bash scripts/package-macos.sh",
     "test": "node --experimental-strip-types --test tests/*.test.ts"
   },
   "dependencies": {

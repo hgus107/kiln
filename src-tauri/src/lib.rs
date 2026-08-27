@@ -6,7 +6,10 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{
+    menu::{MenuBuilder, SubmenuBuilder},
+    AppHandle, Emitter, Manager, State,
+};
 
 /// libvips is initialised once for the life of the process.
 static VIPS: OnceLock<libvips::VipsApp> = OnceLock::new();
@@ -466,6 +469,20 @@ fn cancel_batch(batch: State<Batch>) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .menu(|app| {
+            let kiln_menu = SubmenuBuilder::new(app, "Kiln")
+                .about_with_text("About Kiln", None)
+                .separator()
+                .quit_with_text("Quit Kiln")
+                .build()?;
+            let view_menu = SubmenuBuilder::new(app, "View")
+                .fullscreen_with_text("Toggle Full Screen")
+                .build()?;
+
+            MenuBuilder::new(app)
+                .items(&[&kiln_menu, &view_menu])
+                .build()
+        })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(Batch::default())

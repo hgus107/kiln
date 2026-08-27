@@ -4,7 +4,7 @@ Raw in, finished out. Your photos never leave the machine.
 
 Website: [https://hgus107.github.io/kiln/](https://hgus107.github.io/kiln/)
 
-Current release: **v0.1.1**
+Current release: **v0.1.2**
 
 ## Why this exists
 
@@ -23,6 +23,7 @@ Kiln is that interface. It runs on your computer, has no network code, plus supp
 - Strips or keeps metadata, your choice — including GPS, camera serial, and C2PA / AI-generation tags
 - One bad file fails on its own row instead of killing the run
 - Fixed application header, settings sidebar, queue controls, plus action bar; only the file rows scroll during large batches
+- Focused macOS menu bar containing only Kiln → About Kiln / Quit Kiln plus View → Toggle Full Screen
 
 Planned: SVG rasterization in 1.1, camera RAW in 2.0. Both are separate problems and neither is worth delaying a working converter for.
 

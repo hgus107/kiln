@@ -1,7 +1,10 @@
 import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 
-const fixturePaths = ["/fixtures/Alpha.jpg", "/fixtures/Beta.png", "/fixtures/Corrupt.jpg"];
+const requestedQueueSize = Number(new URLSearchParams(window.location.search).get("large") ?? 0);
+const fixturePaths = requestedQueueSize > 0
+  ? Array.from({ length: requestedQueueSize }, (_, index) => `/fixtures/Image-${String(index + 1).padStart(4, "0")}.jpg`)
+  : ["/fixtures/Alpha.jpg", "/fixtures/Beta.png", "/fixtures/Corrupt.jpg"];
 let conversionRun = 0;
 let cancellationRequested = false;
 let saveAttempt = 0;
@@ -22,6 +25,17 @@ mockIPC(async (command, payload = {}) => {
     };
   }
   if (command === "probe_files") {
+    if (requestedQueueSize > 0) {
+      return fixturePaths.map((path, index) => ({
+        kind: "ok",
+        path,
+        name: path.split("/").pop() ?? path,
+        bytes: 4_096 + index,
+        width: 1600,
+        height: 1200,
+        hasMetadata: index % 2 === 0,
+      }));
+    }
     return [
       { kind: "ok", path: fixturePaths[0], name: "Alpha.jpg", bytes: 4_096, width: 1600, height: 1200, hasMetadata: true },
       { kind: "ok", path: fixturePaths[1], name: "Beta.png", bytes: 8_192, width: 2048, height: 1536, hasMetadata: false },

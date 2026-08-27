@@ -2,6 +2,10 @@
 
 Raw in, finished out. Your photos never leave the machine.
 
+Website: [https://hgus107.github.io/kiln/](https://hgus107.github.io/kiln/)
+
+Current release: **v0.1.1**
+
 ## Why this exists
 
 Converting a HEIC from your phone into a JPEG means, today, uploading it to a website. Search "heic to jpg" and every result on the first page is an ad-covered site with a file limit, a queue, and a copy of your photo on someone else's server.
@@ -18,6 +22,7 @@ Kiln is that interface. It runs on your computer, has no network code, plus supp
 - Optional exact dimensions from 1024 × 1024 through 7680 × 7680, assignable per row or selection
 - Strips or keeps metadata, your choice — including GPS, camera serial, and C2PA / AI-generation tags
 - One bad file fails on its own row instead of killing the run
+- Fixed application header, settings sidebar, queue controls, plus action bar; only the file rows scroll during large batches
 
 Planned: SVG rasterization in 1.1, camera RAW in 2.0. Both are separate problems and neither is worth delaying a working converter for.
 
@@ -45,7 +50,7 @@ One honest limit: this removes metadata, and metadata only. Google's SynthID wat
 
 ## How to use
 
-> Pre-release. There is no installer to download yet. This is the intended flow.
+Download the signed, notarized Apple Silicon installer from the [latest release](https://github.com/hgus107/kiln/releases/latest).
 
 1. Drag files or a folder onto the window.
 2. Pick an output format, compression quality, plus optional exact dimensions.

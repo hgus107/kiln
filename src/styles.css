@@ -20,6 +20,12 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
 [hidden] {
   display: none !important;
 }
@@ -45,11 +51,13 @@ button {
 .app-shell {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   background: var(--background);
 }
 
 .app-header {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -93,6 +101,7 @@ button {
   grid-template-columns: 290px minmax(0, 1fr);
   flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
 
 .settings-panel {
@@ -102,6 +111,8 @@ button {
   padding: 24px 22px;
   border-right: 1px solid var(--line);
   background: var(--surface);
+  min-height: 0;
+  overflow: hidden;
 }
 
 .settings-panel h1,
@@ -198,6 +209,7 @@ button {
   gap: 16px;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
   padding: 24px;
 }
 
@@ -318,7 +330,7 @@ button:disabled {
 .queue {
   position: relative;
   flex: 1;
-  min-height: 210px;
+  min-height: 0;
   overflow: auto;
   overscroll-behavior: none;
   border: 1px solid var(--line);
@@ -446,6 +458,7 @@ tr.failed .detail {
 }
 
 footer {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -614,5 +627,21 @@ footer {
 
   .drop #browse {
     grid-column: 1 / -1;
+  }
+}
+
+@media (max-height: 600px) {
+  .settings-panel {
+    gap: 14px;
+    padding-block: 14px;
+  }
+
+  .dimension-fields {
+    gap: 10px;
+  }
+
+  .toggles {
+    gap: 10px;
+    padding-top: 12px;
   }
 }

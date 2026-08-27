@@ -8,6 +8,7 @@ export type ConvertibleRow = {
   hasSourceInfo: boolean;
   targetDimension?: string;
   output?: string;
+  reconvert?: boolean;
 };
 
 export type ResizeRequest =
@@ -39,16 +40,28 @@ export function rowResize(targetDimension?: string): ResizeRequest | null {
 }
 
 export function convertibleRows(rows: Iterable<ConvertibleRow>): ConvertibleRow[] {
-  return [...rows].filter((row) => row.hasSourceInfo && RETRYABLE_STATES.has(row.state));
+  return [...rows].filter((row) =>
+    row.hasSourceInfo && (RETRYABLE_STATES.has(row.state) || (Boolean(row.reconvert) && (row.state === "done" || row.state === "saved")))
+  );
+}
+
+export function reconversionPaths(
+  rows: Iterable<ConvertibleRow>,
+  selectedPaths: ReadonlySet<string>,
+): Set<string> {
+  return new Set([...rows]
+    .filter((row) => selectedPaths.has(row.path) && row.hasSourceInfo && (row.state === "done" || row.state === "saved"))
+    .map((row) => row.path));
 }
 
 export function conversionPlan(rows: Iterable<ConvertibleRow>, format: string): ConversionPlan {
   const queue = [...rows];
   if (format === "") return { kind: "missing-format" };
-  if (queue.some((row) => Boolean(row.output) && row.state !== "saved")) {
+  const requested = convertibleRows(queue).filter((row) => row.reconvert);
+  if (requested.length === 0 && queue.some((row) => Boolean(row.output) && row.state !== "saved")) {
     return { kind: "unsaved-results" };
   }
-  const candidates = convertibleRows(queue);
+  const candidates = requested.length > 0 ? requested : convertibleRows(queue);
   if (candidates.length === 0) return { kind: "no-convertible-files" };
 
   const jobs: ConversionJob[] = [];

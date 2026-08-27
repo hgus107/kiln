@@ -16,15 +16,20 @@ export function rangeBetween(paths: string[], anchor: string, target: string): s
 
 export function clickSelection(
   paths: string[],
-  active: string,
-  anchor: string,
+  _active: string,
+  _anchor: string,
   target: string,
   shiftKey: boolean,
+  currentSelected: Iterable<string> = [],
 ): QueueSelection {
   if (!paths.includes(target)) return { selected: [], active: "", anchor: "" };
   if (shiftKey) {
-    const fixedAnchor = paths.includes(anchor) ? anchor : paths.includes(active) ? active : target;
-    return { selected: rangeBetween(paths, fixedAnchor, target), active: target, anchor: fixedAnchor };
+    const selected = new Set([...currentSelected].filter((path) => paths.includes(path)));
+    if (selected.has(target)) selected.delete(target);
+    else selected.add(target);
+    const ordered = paths.filter((path) => selected.has(path));
+    const nextActive = selected.has(target) ? target : (ordered[ordered.length - 1] ?? "");
+    return { selected: ordered, active: nextActive, anchor: nextActive };
   }
   return { selected: [target], active: target, anchor: target };
 }

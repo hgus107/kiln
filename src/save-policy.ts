@@ -1,21 +1,37 @@
-export type SaveDestinationMode = "original" | "chosen";
-
 export type SaveableRow = {
-  sourcePath: string;
   outputPath: string;
 };
 
-export type SaveMove = {
+export type SaveCopy = {
   from: string;
   to: string;
 };
 
+type SaveCandidate = {
+  path: string;
+  state: string;
+  outputPath?: string;
+};
+
+export function scopedSavePaths(
+  rows: Iterable<SaveCandidate>,
+  selectedPaths: ReadonlySet<string>,
+  selectionExplicit: boolean,
+): string[] {
+  return [...rows]
+    .filter((row) => Boolean(row.outputPath) && (row.state === "done" || row.state === "failed" || row.state === "saved"))
+    .filter((row) => !selectionExplicit || selectedPaths.has(row.path))
+    .map((row) => row.path);
+}
+
 export function saveEnabled(
-  rows: Iterable<{ state: string; outputPath?: string }>,
+  rows: Iterable<SaveCandidate>,
   busy: boolean,
+  selectedPaths: ReadonlySet<string> = new Set(),
+  selectionExplicit = false,
 ): boolean {
   if (busy) return false;
-  return [...rows].some((row) => Boolean(row.outputPath) && row.state !== "saved");
+  return scopedSavePaths(rows, selectedPaths, selectionExplicit).length > 0;
 }
 
 export function baseName(path: string): string {
@@ -61,24 +77,14 @@ export function safeFileStem(value: string, fallback: string): string {
   return stem;
 }
 
-export function originalLocationLabel(rows: SaveableRow[]): string {
-  const folders = new Set(rows.map((row) => parentFolder(row.sourcePath)));
-  if (folders.size === 0) return "";
-  if (folders.size === 1) return [...folders][0];
-  return "Each Image's Original Folder";
-}
-
-export function buildSaveMoves(
+export function buildSaveCopies(
   rows: SaveableRow[],
-  mode: SaveDestinationMode,
   chosenFolder: string,
   singleName: string,
-): SaveMove[] {
+): SaveCopy[] {
   const single = rows.length === 1;
   return rows.map((row) => {
-    const folder = mode === "original" || chosenFolder.trim() === ""
-      ? parentFolder(row.sourcePath)
-      : chosenFolder;
+    const folder = chosenFolder.trim();
     const outputName = baseName(row.outputPath);
     let name = outputName;
     if (single) {

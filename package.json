@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "package:mac": "bash scripts/package-macos.sh",
-    "test": "node --experimental-strip-types --test tests/*.test.ts"
+    "test": "npm run build && cargo test --manifest-path src-tauri/Cargo.toml"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

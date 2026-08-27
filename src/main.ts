@@ -3,6 +3,8 @@ import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { dimensionsAreValid, formatDimensionInput } from "./dimension.ts";
 import { filenameTimestamp } from "./timestamp.ts";
+import { formatSizePair } from "./queue-size.ts";
+import { savedCountLabel } from "./queue-summary.ts";
 import { clearPolicy } from "./clear-policy.ts";
 import { chooseFilesEnabled, selectionNotice, uniqueNewPaths } from "./choose-files-policy.ts";
 import { removePolicy, removeSelectionPolicy } from "./remove-policy.ts";
@@ -20,17 +22,18 @@ import {
   conversionPlan,
   convertButtonEnabled,
   progressPresentation,
+  reconversionPaths,
   type ConvertibleRow,
   type ConversionJob,
 } from "./conversion-policy.ts";
 import {
   baseName,
-  buildSaveMoves,
+  buildSaveCopies,
   extensionOf,
-  originalLocationLabel,
+  parentFolder,
   saveEnabled,
+  scopedSavePaths,
   stemOf,
-  type SaveDestinationMode,
 } from "./save-policy.ts";
 
 type SourceInfo = {
@@ -68,7 +71,9 @@ type Row = {
   error?: string;
   // Where the converted result currently sits (a scratch path) until saved.
   output?: string;
+  outputBytes?: number;
   savedPath?: string;
+  reconvert?: boolean;
 };
 
 const EXTENSIONS = ["heic", "heif", "avif", "webp", "jpg", "jpeg", "jfif", "png", "tif", "tiff"];
@@ -79,6 +84,7 @@ const rowEls = new Map<string, HTMLTableRowElement>();
 let selectedOrig = "";
 const selectedPaths = new Set<string>();
 let selectionAnchor = "";
+let selectionExplicit = false;
 let running = false;
 let conversionStarting = false;
 let cancellationRequested = false;
@@ -88,8 +94,8 @@ let returnFocusToDimension = false;
 let pickerOpen = false;
 let dropProcessing = false;
 const removingPaths = new Set<string>();
-// The settings signature each in-flight file is being converted under, read back
-// when it completes.
+const reconversionBackups = new Map<string, Row>();
+const reconversionFailures = new Set<string>();
 
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -110,11 +116,10 @@ const saveNameField = element<HTMLLabelElement>("save-name-field");
 const saveNameInput = element<HTMLInputElement>("save-name");
 const saveExt = element<HTMLSpanElement>("save-ext");
 const saveLocLabel = element<HTMLParagraphElement>("save-loc-label");
-const saveLocation = element<HTMLDivElement>("save-location");
+const saveLocation = element<HTMLInputElement>("save-location");
 const saveConfirm = element<HTMLButtonElement>("save-confirm");
 const saveClose = element<HTMLButtonElement>("save-close");
 const saveCancel = element<HTMLButtonElement>("save-cancel");
-const saveOriginal = element<HTMLButtonElement>("save-original");
 const saveChange = element<HTMLButtonElement>("save-change");
 const confirmDialog = element<HTMLDivElement>("confirm");
 const confirmTitle = element<HTMLParagraphElement>("confirm-title");
@@ -144,14 +149,6 @@ const clearButton = element<HTMLButtonElement>("clear");
 const removeSelectedButton = element<HTMLButtonElement>("remove-selected");
 const browseButton = element<HTMLButtonElement>("browse");
 
-function formatBytes(bytes: number): string {
-  if (bytes <= 0) return "—";
-  const units = ["B", "KB", "MB", "GB"];
-  const power = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-  const value = bytes / Math.pow(1024, power);
-  return `${value >= 10 || power === 0 ? Math.round(value) : value.toFixed(1)} ${units[power]}`;
-}
-
 function updateSummary() {
   const total = rows.size;
   const done = [...rows.values()].filter((row) => row.state === "done").length;
@@ -164,15 +161,11 @@ function updateSummary() {
   } else if (running) {
     const completed = [...activeConversionPaths].filter((path) => {
       const state = rows.get(path)?.state;
-      return state === "done" || state === "failed" || state === "cancelled";
+      return state === "done" || state === "saved" || state === "failed" || state === "cancelled";
     }).length;
     summary.textContent = `Converting — ${completed} Of ${activeConversionPaths.size}`;
   } else if (saved) {
-    summary.textContent = [
-      `${saved} SAVED`,
-      failed ? `${failed} FAILED` : "",
-      cancelled ? `${cancelled} CANCELLED` : "",
-    ].filter(Boolean).join(", ");
+    summary.textContent = savedCountLabel(saved);
   } else if (done || failed || cancelled) {
     summary.textContent = [
       done ? `${done} CONVERTED` : "",
@@ -192,7 +185,9 @@ function updateRow(path: string) {
   const tr = rowEls.get(path);
   if (!row || !tr) return;
   tr.className = rowClass(row);
-  const detailCell = tr.children[3] as HTMLElement | undefined;
+  const sizeCell = tr.children[1] as HTMLElement | undefined;
+  if (sizeCell) sizeCell.textContent = formatSizePair(row.info?.bytes ?? 0, row.outputBytes);
+  const detailCell = tr.children[2] as HTMLElement | undefined;
   if (detailCell) detailCell.textContent = row.detail;
   populateOrigDim();
   updateSummary();
@@ -230,6 +225,28 @@ function applySelection(selection: QueueSelection) {
   selectionAnchor = rows.has(selection.anchor) ? selection.anchor : selectedOrig;
 }
 
+function clearReconversionRequests() {
+  for (const [path, row] of rows) {
+    if (row.reconvert) rows.set(path, { ...row, reconvert: false });
+  }
+}
+
+function applyUserSelection(selection: QueueSelection) {
+  clearReconversionRequests();
+  selectionExplicit = true;
+  applySelection(selection);
+}
+
+function requestSelectedReconversion() {
+  if (!selectionExplicit) return;
+  const requested = reconversionPaths([...rows.values()].map(conversionRow), selectedPaths);
+  for (const [path, row] of rows) {
+    const reconvert = requested.has(path);
+    if (Boolean(row.reconvert) !== reconvert) rows.set(path, { ...row, reconvert });
+  }
+  updateConvertControl();
+}
+
 function rowClass(row: Row): string {
   return [row.state, selectedPaths.has(row.path) ? "selected" : "", row.path === selectedOrig ? "active" : ""]
     .filter(Boolean)
@@ -243,6 +260,7 @@ function conversionRow(row: Row): ConvertibleRow {
     hasSourceInfo: row.info !== null,
     targetDimension: row.targetDimension,
     output: row.output,
+    reconvert: row.reconvert,
   };
 }
 
@@ -288,10 +306,7 @@ function render() {
     name.title = row.path;
 
     const size = document.createElement("td");
-    size.textContent = row.info ? formatBytes(row.info.bytes) : "—";
-
-    const dimensions = document.createElement("td");
-    dimensions.textContent = row.info ? `${row.info.width} × ${row.info.height}` : "—";
+    size.textContent = formatSizePair(row.info?.bytes ?? 0, row.outputBytes);
 
     const detail = document.createElement("td");
     detail.textContent = row.detail;
@@ -315,13 +330,16 @@ function render() {
 
     tr.addEventListener("click", (event) => {
       if (busy || removingPaths.has(row.path)) return;
-      applySelection(
-        clickSelection([...rows.keys()], selectedOrig, selectionAnchor, row.path, event.shiftKey),
+      if (event.shiftKey) event.preventDefault();
+      applyUserSelection(
+        clickSelection(
+          [...rows.keys()], selectedOrig, selectionAnchor, row.path, event.shiftKey, selectedPaths,
+        ),
       );
       render();
     });
 
-    tr.append(name, size, dimensions, detail, remove);
+    tr.append(name, size, detail, remove);
     rowsBody.append(tr);
   }
 
@@ -333,8 +351,10 @@ function render() {
   removeSelectedButton.textContent = `Remove Selected (${selectedPaths.size})`;
   removeSelectedButton.disabled = busy || [...selectedPaths].some((path) => removingPaths.has(path));
   saveButton.disabled = !saveEnabled(
-    [...rows.values()].map((row) => ({ state: row.state, outputPath: row.output })),
+    [...rows.values()].map((row) => ({ path: row.path, state: row.state, outputPath: row.output })),
     busy,
+    selectedPaths,
+    selectionExplicit,
   );
   saveButton.textContent = saving ? "Saving" : "Save";
   const canChoose = chooseFilesEnabled(rows.values(), busy, pickerOpen || dropProcessing);
@@ -352,16 +372,17 @@ function render() {
   const saveDialogBusy = saving || saveFolderPickerOpen;
   saveClose.disabled = saveDialogBusy;
   saveCancel.disabled = saveDialogBusy;
-  saveConfirm.disabled = saveDialogBusy;
-  saveOriginal.disabled = saveDialogBusy;
+  saveConfirm.disabled = saveDialogBusy || pendingFolder.trim() === "";
   saveChange.disabled = saveDialogBusy;
   saveNameInput.disabled = saveDialogBusy;
+  saveLocation.disabled = saveDialogBusy;
 
   // An empty queue resets the To box to the placeholder.
   if (total === 0) {
     selectedOrig = "";
     selectedPaths.clear();
     selectionAnchor = "";
+    selectionExplicit = false;
     formatSelect.value = "";
     newPixel.value = "";
     qualityField.hidden = false;
@@ -563,15 +584,14 @@ function stamp(): string {
   return filenameTimestamp(new Date());
 }
 
-function conversionSettings(target: { folder: string; outputPath?: string | null }) {
+function conversionSettings(folder: string) {
   return {
     format: formatSelect.value,
     quality: compressionQuality(Number(qualityInput.value)),
     // Each job overrides this with its own Original or Exact resize request.
     resize: { mode: "original" },
     keepMetadata: keepMetadata.checked,
-    destination: target.folder,
-    outputPath: target.outputPath ?? null,
+    destination: folder,
     // One stamp for the whole run, so every file from a batch carries the same one.
     suffix: timestamp.checked ? stamp() : null,
   };
@@ -617,6 +637,8 @@ async function convert() {
 
   const jobs: ConversionJob[] = plan.jobs;
   const previousRows = new Map(jobs.map((job) => [job.path, { ...rows.get(job.path)! }]));
+  reconversionBackups.clear();
+  reconversionFailures.clear();
   conversionStarting = true;
   activeConversionPaths.clear();
   for (const job of jobs) activeConversionPaths.add(job.path);
@@ -637,7 +659,18 @@ async function convert() {
 
   for (const job of jobs) {
     const row = rows.get(job.path);
-    if (row) rows.set(job.path, { ...row, state: "working", detail: "Converting", error: undefined });
+    if (!row) continue;
+    if (row.reconvert) reconversionBackups.set(job.path, { ...row });
+    rows.set(job.path, {
+      ...row,
+      state: "working",
+      detail: "Converting",
+      error: undefined,
+      output: undefined,
+      outputBytes: undefined,
+      savedPath: undefined,
+      reconvert: false,
+    });
   }
 
   running = true;
@@ -648,12 +681,14 @@ async function convert() {
   try {
     await invoke("convert_batch", {
       jobs,
-      settings: conversionSettings({ folder: scratch }),
+      settings: conversionSettings(scratch),
     });
   } catch {
     running = false;
     cancellationRequested = false;
     activeConversionPaths.clear();
+    reconversionBackups.clear();
+    reconversionFailures.clear();
     for (const [path, row] of previousRows) rows.set(path, row);
     popup("Conversion Could Not Start");
     render();
@@ -661,32 +696,32 @@ async function convert() {
 }
 
 let pendingFolder = "";
-let saveDestinationMode: SaveDestinationMode = "original";
 let saveFolderPickerOpen = false;
 
-// Converted-but-unsaved rows: they hold a scratch output waiting to be saved.
-// Rows that have a converted result on hand and have not already been saved.
+// Converted plus previously saved rows retain their protected scratch result,
+// allowing Save to write another copy into a different target folder.
 function savableRows(): Row[] {
-  return [...rows.values()].filter((row) => Boolean(row.output) && row.state !== "saved");
+  const all = [...rows.values()];
+  const paths = new Set(scopedSavePaths(
+    all.map((row) => ({ path: row.path, state: row.state, outputPath: row.output })),
+    selectedPaths,
+    selectionExplicit,
+  ));
+  return all.filter((row) => paths.has(row.path));
 }
 
 function saveablePolicyRows(ready: Row[]) {
-  return ready.map((row) => ({ sourcePath: row.path, outputPath: row.output! }));
+  return ready.map((row) => ({ outputPath: row.output! }));
 }
 
-function updateSaveDestinationDisplay(ready: Row[]) {
-  const original = saveDestinationMode === "original";
-  saveOriginal.setAttribute("aria-pressed", String(original));
-  saveChange.setAttribute("aria-pressed", String(!original));
-  saveOriginal.textContent = ready.length === 1 ? "Original Folder" : "Original Folders";
-  saveLocation.textContent = original
-    ? originalLocationLabel(saveablePolicyRows(ready))
-    : pendingFolder;
+function updateSaveDestinationDisplay() {
+  if (document.activeElement !== saveLocation) saveLocation.value = pendingFolder;
+  saveConfirm.disabled = saving || saveFolderPickerOpen || pendingFolder.trim() === "";
 }
 
 // Step two. A single result shows an editable name; a batch shows just the
-// folder. Location defaults to where the originals came from; Change… opens the
-// native folder picker.
+// target folder. Its path can be typed directly; Choose Folder opens the native
+// folder picker.
 function openSaveDialog() {
   if (interactionBusy()) return;
   const ready = savableRows();
@@ -695,8 +730,7 @@ function openSaveDialog() {
     return;
   }
 
-  saveDestinationMode = "original";
-  pendingFolder = "";
+  pendingFolder = parentFolder(ready[0].path);
   const single = ready.length === 1;
   const ext = extensionOf(ready[0].output!);
 
@@ -713,7 +747,7 @@ function openSaveDialog() {
   }
 
   saveLocLabel.textContent = "Save To";
-  updateSaveDestinationDisplay(ready);
+  updateSaveDestinationDisplay();
   recenter(saveDialog);
   saveDialog.hidden = false;
   syncBackdrop();
@@ -849,6 +883,9 @@ function resetClearedQueue() {
   selectedOrig = "";
   selectedPaths.clear();
   selectionAnchor = "";
+  selectionExplicit = false;
+  reconversionBackups.clear();
+  reconversionFailures.clear();
   formatSelect.value = "";
   newPixel.value = "";
   qualityField.hidden = false;
@@ -895,20 +932,24 @@ type SavedResult =
   | { status: "ok"; from: string; path: string }
   | { status: "failed"; from: string; error: string };
 
-// Moves each converted result out of scratch to the chosen destination.
+// Copies each converted result from scratch to the chosen destination.
 async function saveResults() {
   if (saving) return;
   const ready = savableRows();
   if (ready.length === 0) return;
+  pendingFolder = saveLocation.value.trim();
+  if (pendingFolder === "") {
+    popup("Choose A Folder");
+    return;
+  }
   const single = ready.length === 1;
 
-  const moves = buildSaveMoves(
+  const copies = buildSaveCopies(
     saveablePolicyRows(ready),
-    saveDestinationMode,
     pendingFolder,
     saveNameInput.value,
   );
-  if (single) saveNameInput.value = stemOf(baseName(moves[0].to));
+  if (single) saveNameInput.value = stemOf(baseName(copies[0].to));
 
   saveDialog.hidden = true;
   saving = true;
@@ -918,7 +959,7 @@ async function saveResults() {
   // If any target already exists, ask before writing.
   let existing: string[];
   try {
-    existing = await invoke<string[]>("existing_targets", { paths: moves.map((move) => move.to) });
+    existing = await invoke<string[]>("existing_targets", { paths: copies.map((copy) => copy.to) });
   } catch {
     saving = false;
     popup("Destination Could Not Be Checked");
@@ -941,7 +982,7 @@ async function saveResults() {
 
   let results: SavedResult[];
   try {
-    results = await invoke<SavedResult[]>("save_files", { moves, overwrite });
+    results = await invoke<SavedResult[]>("save_files", { copies, overwrite });
   } catch {
     saving = false;
     popup("Files Could Not Be Saved");
@@ -968,9 +1009,6 @@ async function saveResults() {
       rows.set(row.path, { ...row, state: "failed", detail: "Failed", error: "No Save Result Returned" });
     }
   }
-  // Reset the To box to the placeholder after a save.
-  formatSelect.value = "";
-  qualityField.hidden = false;
   saving = false;
   syncBackdrop();
   render();
@@ -985,13 +1023,30 @@ listen<Progress>("conversion-progress", ({ payload }) => {
     payload.status === "failed" ? payload.error : undefined,
   );
   if (payload.status === "done") {
+    const previous = reconversionBackups.get(payload.path);
     rows.set(payload.path, {
       ...row,
       ...presentation,
       output: payload.output,
+      outputBytes: payload.bytes,
     });
+    reconversionBackups.delete(payload.path);
+    if (previous?.output && previous.output !== payload.output) {
+      void invoke<string[]>("discard_files", { paths: [previous.output] })
+        .then((failures) => {
+          if (failures.length > 0) popup("Previous Temporary File Could Not Be Removed");
+        })
+        .catch(() => popup("Previous Temporary File Could Not Be Removed"));
+    }
   } else {
-    rows.set(payload.path, { ...row, ...presentation });
+    const previous = reconversionBackups.get(payload.path);
+    if (previous) {
+      rows.set(payload.path, { ...previous, reconvert: false, error: presentation.error });
+      reconversionBackups.delete(payload.path);
+      if (payload.status === "failed") reconversionFailures.add(previous.info?.name ?? previous.path);
+    } else {
+      rows.set(payload.path, { ...row, ...presentation });
+    }
   }
   updateRow(payload.path);
 });
@@ -1002,11 +1057,26 @@ listen("conversion-finished", () => {
   cancellationRequested = false;
   for (const [path, row] of rows) {
     if (row.state === "working") {
-      rows.set(path, { ...row, state: "failed", detail: "Failed", error: "Conversion Did Not Finish" });
+      const previous = reconversionBackups.get(path);
+      if (previous) {
+        rows.set(path, { ...previous, reconvert: false, error: "Reconversion Did Not Finish" });
+        reconversionFailures.add(previous.info?.name ?? previous.path);
+      } else {
+        rows.set(path, { ...row, state: "failed", detail: "Failed", error: "Conversion Did Not Finish" });
+      }
     }
   }
   activeConversionPaths.clear();
+  reconversionBackups.clear();
+  selectedOrig = "";
+  selectedPaths.clear();
+  selectionAnchor = "";
+  selectionExplicit = false;
   render();
+  if (reconversionFailures.size > 0) {
+    popup("Some Files Could Not Be Reconverted", { names: [...reconversionFailures] });
+    reconversionFailures.clear();
+  }
 });
 
 listen<{ paths: string[] }>("tauri://drag-drop", ({ payload }) => {
@@ -1046,19 +1116,22 @@ browseButton.addEventListener("click", async () => {
 formatSelect.addEventListener("change", () => {
   // Lossless formats do not use a lossy compression-quality setting.
   qualityField.hidden = formatSelect.value === "png" || formatSelect.value === "tiff";
+  requestSelectedReconversion();
   updateConvertControl();
 });
 
 qualityInput.addEventListener("input", () => {
   qualityValue.textContent = qualityInput.value;
+  requestSelectedReconversion();
 });
 
 // Picking a file's original dimension highlights that row in the queue.
 origDim.addEventListener("change", () => {
-  selectedOrig = origDim.value;
-  selectionAnchor = selectedOrig;
-  selectedPaths.clear();
-  if (selectedOrig) selectedPaths.add(selectedOrig);
+  applyUserSelection({
+    selected: origDim.value ? [origDim.value] : [],
+    active: origDim.value,
+    anchor: origDim.value,
+  });
   render();
 });
 
@@ -1072,6 +1145,7 @@ newPixel.addEventListener("input", () => {
     const row = rows.get(path);
     if (row) rows.set(path, { ...row, targetDimension: newPixel.value });
   }
+  requestSelectedReconversion();
   updateConvertControl();
 });
 
@@ -1090,6 +1164,7 @@ newPixel.addEventListener("keydown", (event) => {
       const row = rows.get(path);
       if (row) rows.set(path, { ...row, targetDimension: newPixel.value });
     }
+    requestSelectedReconversion();
     updateConvertControl();
   }
 });
@@ -1120,7 +1195,7 @@ document.addEventListener("keydown", (event) => {
   const selectAllShortcut = isSelectAllShortcut(event.key, event.metaKey, event.ctrlKey, IS_MAC);
   if (selectAllShortcut && !editingText && !popupOpen && !interactionBusy() && paths.length > 0) {
     event.preventDefault();
-    applySelection(selectAll(paths, selectedOrig));
+    applyUserSelection(selectAll(paths, selectedOrig));
     render();
     return;
   }
@@ -1128,7 +1203,7 @@ document.addEventListener("keydown", (event) => {
   if ((event.key === "ArrowUp" || event.key === "ArrowDown") && !editingText && !popupOpen && !interactionBusy()) {
     if (paths.length === 0) return;
     event.preventDefault();
-    applySelection(
+    applyUserSelection(
       arrowSelection(
         paths,
         selectedOrig,
@@ -1157,10 +1232,9 @@ makeDraggable(discardSelectedDialog);
 saveClose.addEventListener("click", closeSaveDialog);
 saveCancel.addEventListener("click", closeSaveDialog);
 saveConfirm.addEventListener("click", () => void saveResults());
-saveOriginal.addEventListener("click", () => {
-  if (saving || saveFolderPickerOpen) return;
-  saveDestinationMode = "original";
-  updateSaveDestinationDisplay(savableRows());
+saveLocation.addEventListener("input", () => {
+  pendingFolder = saveLocation.value;
+  updateSaveDestinationDisplay();
 });
 saveChange.addEventListener("click", async () => {
   if (saving || saveFolderPickerOpen) return;
@@ -1170,14 +1244,13 @@ saveChange.addEventListener("click", async () => {
     const chosen = await open({ directory: true, multiple: false, title: "Choose A Folder" });
     if (typeof chosen === "string") {
       pendingFolder = chosen;
-      saveDestinationMode = "chosen";
     }
   } catch {
     saveDialog.hidden = true;
     popup("Could Not Open Folder Picker");
   } finally {
     saveFolderPickerOpen = false;
-    updateSaveDestinationDisplay(savableRows());
+    updateSaveDestinationDisplay();
     render();
   }
 });
@@ -1193,10 +1266,15 @@ clearButton.addEventListener("click", async () => {
     const temporaryPaths = [...rows.values()]
       .filter((row) => Boolean(row.output) && row.state !== "saved")
       .map((row) => row.output!);
-    const failures = await invoke<string[]>("discard_files", { paths: temporaryPaths });
-    resetClearedQueue();
-    if (failures.length > 0) {
-      popup("Some Temporary Files Could Not Be Removed");
+    try {
+      const failures = await invoke<string[]>("discard_files", { paths: temporaryPaths });
+      if (failures.length > 0) {
+        popup("Some Temporary Files Could Not Be Removed");
+        return;
+      }
+      resetClearedQueue();
+    } catch {
+      popup("Temporary Files Could Not Be Removed");
     }
     return;
   }
@@ -1205,10 +1283,15 @@ clearButton.addEventListener("click", async () => {
     .filter((row) => Boolean(row.output))
     .map((row) => row.output!);
   if (savedTemporaryPaths.length > 0) {
-    const failures = await invoke<string[]>("discard_files", { paths: savedTemporaryPaths });
-    resetClearedQueue();
-    if (failures.length > 0) {
-      popup("Some Temporary Files Could Not Be Removed");
+    try {
+      const failures = await invoke<string[]>("discard_files", { paths: savedTemporaryPaths });
+      if (failures.length > 0) {
+        popup("Some Temporary Files Could Not Be Removed");
+        return;
+      }
+      resetClearedQueue();
+    } catch {
+      popup("Temporary Files Could Not Be Removed");
     }
     return;
   }

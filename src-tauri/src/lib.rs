@@ -90,19 +90,20 @@ struct CollectedImages {
 /// A later probe identifies corrupt or unreadable images without stopping the batch.
 #[tauri::command]
 fn collect_images(paths: Vec<String>) -> CollectedImages {
-    fn walk(
-        path: &std::path::Path,
-        depth: usize,
-        found: &mut Vec<String>,
-        seen_directories: &mut std::collections::HashSet<PathBuf>,
-        seen_files: &mut std::collections::HashSet<PathBuf>,
-        ignored: &mut usize,
-        truncated: &mut bool,
-        folder_depth_limited: &mut bool,
-        unreadable_folders: &mut usize,
-    ) {
-        if found.len() >= 20_000 {
-            *truncated = true;
+    #[derive(Default)]
+    struct CollectionState {
+        found: Vec<String>,
+        seen_directories: std::collections::HashSet<PathBuf>,
+        seen_files: std::collections::HashSet<PathBuf>,
+        ignored: usize,
+        truncated: bool,
+        folder_depth_limited: bool,
+        unreadable_folders: usize,
+    }
+
+    fn walk(path: &std::path::Path, depth: usize, state: &mut CollectionState) {
+        if state.found.len() >= 20_000 {
+            state.truncated = true;
             return;
         }
 
@@ -110,31 +111,21 @@ fn collect_images(paths: Vec<String>) -> CollectedImages {
             // Deep enough for a real photo library, shallow enough that a
             // dropped home directory cannot run away with the app.
             if depth >= 8 {
-                *folder_depth_limited = true;
+                state.folder_depth_limited = true;
                 return;
             }
             let resolved = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-            if !seen_directories.insert(resolved) {
+            if !state.seen_directories.insert(resolved) {
                 return;
             }
             let Ok(entries) = std::fs::read_dir(path) else {
-                *unreadable_folders += 1;
+                state.unreadable_folders += 1;
                 return;
             };
             let mut children: Vec<_> = entries.flatten().map(|entry| entry.path()).collect();
             children.sort();
             for child in children {
-                walk(
-                    &child,
-                    depth + 1,
-                    found,
-                    seen_directories,
-                    seen_files,
-                    ignored,
-                    truncated,
-                    folder_depth_limited,
-                    unreadable_folders,
-                );
+                walk(&child, depth + 1, state);
             }
             return;
         }
@@ -145,47 +136,31 @@ fn collect_images(paths: Vec<String>) -> CollectedImages {
             .unwrap_or_default();
         if SUPPORTED.contains(&extension.as_str()) {
             let resolved = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-            if seen_files.insert(resolved.clone()) {
+            if state.seen_files.insert(resolved.clone()) {
                 if let Some(path) = resolved.to_str() {
-                    found.push(path.to_string());
+                    state.found.push(path.to_string());
                 }
             }
         } else {
-            *ignored += 1;
+            state.ignored += 1;
         }
     }
 
-    let mut found = Vec::new();
-    let mut seen_directories = std::collections::HashSet::new();
-    let mut seen_files = std::collections::HashSet::new();
-    let mut ignored = 0;
-    let mut truncated = false;
-    let mut folder_depth_limited = false;
-    let mut unreadable_folders = 0;
+    let mut state = CollectionState::default();
     for path in paths {
-        walk(
-            &PathBuf::from(path),
-            0,
-            &mut found,
-            &mut seen_directories,
-            &mut seen_files,
-            &mut ignored,
-            &mut truncated,
-            &mut folder_depth_limited,
-            &mut unreadable_folders,
-        );
+        walk(&PathBuf::from(path), 0, &mut state);
     }
     CollectedImages {
-        paths: found,
-        ignored,
-        truncated,
-        folder_depth_limited,
-        unreadable_folders,
+        paths: state.found,
+        ignored: state.ignored,
+        truncated: state.truncated,
+        folder_depth_limited: state.folder_depth_limited,
+        unreadable_folders: state.unreadable_folders,
     }
 }
 
 /// A fresh temp directory to convert into before the user saves. Conversion
-/// writes here first (step one); Save moves the results to their real home.
+/// writes here first (step one); Save copies the results to their real home.
 fn scratch_root() -> PathBuf {
     std::env::temp_dir().join(format!("kiln-{}", std::process::id()))
 }
@@ -237,7 +212,7 @@ fn discard_files(paths: Vec<String>) -> Vec<String> {
 }
 
 #[derive(serde::Deserialize)]
-struct Move {
+struct SaveCopy {
     from: String,
     to: String,
 }
@@ -368,9 +343,9 @@ fn copy_with_replace(from: &std::path::Path, target: &std::path::Path) -> Result
     Ok(())
 }
 
-fn save_files_impl(moves: Vec<Move>, overwrite: bool) -> Vec<Saved> {
+fn save_files_impl(copies: Vec<SaveCopy>, overwrite: bool) -> Vec<Saved> {
     let canonical_root = scratch_root().canonicalize().ok();
-    moves
+    copies
         .into_iter()
         .map(|item| {
             let from = PathBuf::from(&item.from);
@@ -435,9 +410,9 @@ fn save_files_impl(moves: Vec<Move>, overwrite: bool) -> Vec<Saved> {
 }
 
 #[tauri::command]
-async fn save_files(moves: Vec<Move>, overwrite: bool) -> Vec<Saved> {
-    let sources: Vec<String> = moves.iter().map(|item| item.from.clone()).collect();
-    match tauri::async_runtime::spawn_blocking(move || save_files_impl(moves, overwrite)).await {
+async fn save_files(copies: Vec<SaveCopy>, overwrite: bool) -> Vec<Saved> {
+    let sources: Vec<String> = copies.iter().map(|item| item.from.clone()).collect();
+    match tauri::async_runtime::spawn_blocking(move || save_files_impl(copies, overwrite)).await {
         Ok(results) => results,
         Err(error) => sources
             .into_iter()
@@ -447,38 +422,6 @@ async fn save_files(moves: Vec<Move>, overwrite: bool) -> Vec<Saved> {
             })
             .collect(),
     }
-}
-
-/// Which of these files already has its converted output sitting in the
-/// destination. With a timestamp suffix every name is unique, so nothing can
-/// pre-exist and the list is empty. This is the authoritative "already
-/// converted" check — it survives clearing the queue and restarting the app.
-#[tauri::command]
-fn already_converted(paths: Vec<String>, settings: Settings) -> Vec<String> {
-    if settings.suffix.is_some() {
-        return Vec::new();
-    }
-
-    paths
-        .into_iter()
-        .filter(|path| {
-            let source = PathBuf::from(path);
-            let directory = match &settings.destination {
-                Some(directory) => PathBuf::from(directory),
-                None => match source.parent() {
-                    Some(parent) => parent.to_path_buf(),
-                    None => return false,
-                },
-            };
-            let stem = source
-                .file_stem()
-                .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            directory
-                .join(format!("{stem}.{}", settings.format.extension()))
-                .exists()
-        })
-        .collect()
 }
 
 /// Reads dimensions and size for the preview table. Files that cannot be opened
@@ -527,6 +470,20 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(Batch::default())
         .setup(|_app| {
+            if let Ok(executable) = std::env::current_exe() {
+                if let Some(macos_dir) = executable.parent() {
+                    if macos_dir.file_name().and_then(|name| name.to_str()) == Some("MacOS") {
+                        if let Some(contents_dir) = macos_dir.parent() {
+                            std::env::set_var("VIPSHOME", contents_dir);
+                        }
+                    }
+                }
+            }
+            // Homebrew's GLib otherwise discovers plug-ins outside the app and
+            // loads a second, differently signed libgio into the process.
+            let gio_modules = scratch_root().join("gio-modules");
+            std::fs::create_dir_all(&gio_modules)?;
+            std::env::set_var("GIO_MODULE_DIR", gio_modules);
             let vips = libvips::VipsApp::default("kiln")?;
             // One thread per image rather than per operation: rayon already has
             // every core busy with a different file, and letting vips fan out on
@@ -537,7 +494,6 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             collect_images,
-            already_converted,
             scratch_dir,
             discard_files,
             save_files,
@@ -564,9 +520,8 @@ mod tests {
             quality: 80,
             resize: Resize::Original,
             keep_metadata: false,
-            destination: Some(destination.to_string_lossy().into_owned()),
+            destination: destination.to_string_lossy().into_owned(),
             suffix: None,
-            output_path: None,
         }
     }
 
@@ -690,9 +645,8 @@ mod tests {
             quality: 40,
             resize: Resize::Original,
             keep_metadata: false,
-            destination: Some(scratch.to_string_lossy().into_owned()),
+            destination: scratch.to_string_lossy().into_owned(),
             suffix: Some("-20260826-013300".to_string()),
-            output_path: None,
         };
         let jobs: Vec<_> = collected
             .paths
@@ -724,9 +678,9 @@ mod tests {
             assert!(output.ends_with("-20260826-013300.jpg"));
         }
 
-        let moves: Vec<_> = scratch_outputs
+        let copies: Vec<_> = scratch_outputs
             .iter()
-            .map(|output| Move {
+            .map(|output| SaveCopy {
                 from: output.clone(),
                 to: export_dir
                     .join(PathBuf::from(output).file_name().unwrap())
@@ -734,7 +688,7 @@ mod tests {
                     .into_owned(),
             })
             .collect();
-        let saved = save_files_impl(moves, false);
+        let saved = save_files_impl(copies, false);
         assert_eq!(saved.len(), 3);
         assert!(saved
             .iter()
@@ -757,7 +711,7 @@ mod tests {
     }
 
     #[test]
-    fn save_files_moves_results_and_never_overwrites() {
+    fn save_files_copies_results_and_never_overwrites() {
         let base = scratch_root().join("run-save-keep-both-test");
         let _ = std::fs::remove_dir_all(&base);
         let scratch = base.join("scratch");
@@ -770,19 +724,19 @@ mod tests {
         std::fs::write(scratch.join("b.jpg"), b"two").unwrap();
         std::fs::write(out.join("a.jpg"), b"existing").unwrap();
 
-        let moves = vec![
-            Move {
+        let copies = vec![
+            SaveCopy {
                 from: scratch.join("a.jpg").to_string_lossy().into(),
                 to: out.join("a.jpg").to_string_lossy().into(),
             },
-            Move {
+            SaveCopy {
                 from: scratch.join("b.jpg").to_string_lossy().into(),
                 to: out.join("b.jpg").to_string_lossy().into(),
             },
         ];
-        let results = save_files_impl(moves, false);
+        let results = save_files_impl(copies, false);
 
-        // The existing a.jpg is untouched; the moved one lands as "a (1).jpg".
+        // The existing a.jpg is untouched; the copy lands as "a (1).jpg".
         assert_eq!(std::fs::read(out.join("a.jpg")).unwrap(), b"existing");
         assert_eq!(std::fs::read(out.join("a (1).jpg")).unwrap(), b"one");
         assert_eq!(std::fs::read(out.join("b.jpg")).unwrap(), b"two");
@@ -790,6 +744,18 @@ mod tests {
         assert!(scratch.join("a.jpg").exists());
         assert!(scratch.join("b.jpg").exists());
         assert!(results.iter().all(|r| matches!(r, Saved::Ok { .. })));
+
+        let second_out = base.join("another-folder");
+        std::fs::create_dir_all(&second_out).unwrap();
+        let second_results = save_files_impl(
+            vec![SaveCopy {
+                from: scratch.join("a.jpg").to_string_lossy().into_owned(),
+                to: second_out.join("a.jpg").to_string_lossy().into_owned(),
+            }],
+            false,
+        );
+        assert!(matches!(&second_results[0], Saved::Ok { .. }));
+        assert_eq!(std::fs::read(second_out.join("a.jpg")).unwrap(), b"one");
     }
 
     #[test]
@@ -806,7 +772,7 @@ mod tests {
         std::fs::write(&target, b"original").unwrap();
 
         let results = save_files_impl(
-            vec![Move {
+            vec![SaveCopy {
                 from: scratch.to_string_lossy().into_owned(),
                 to: target.to_string_lossy().into_owned(),
             }],
@@ -838,7 +804,7 @@ mod tests {
         std::fs::write(&target, b"must-survive").unwrap();
 
         let results = save_files_impl(
-            vec![Move {
+            vec![SaveCopy {
                 from: run.join("missing.jpg").to_string_lossy().into_owned(),
                 to: target.to_string_lossy().into_owned(),
             }],
@@ -858,7 +824,7 @@ mod tests {
         let _ = std::fs::remove_file(&target);
 
         let results = save_files_impl(
-            vec![Move {
+            vec![SaveCopy {
                 from: outside.to_string_lossy().into_owned(),
                 to: target.to_string_lossy().into_owned(),
             }],
@@ -885,7 +851,7 @@ mod tests {
         std::fs::write(out.join("photo (1).jpg"), b"one").unwrap();
 
         let results = save_files_impl(
-            vec![Move {
+            vec![SaveCopy {
                 from: scratch.to_string_lossy().into_owned(),
                 to: out.join("photo.jpg").to_string_lossy().into_owned(),
             }],
@@ -912,11 +878,11 @@ mod tests {
 
         let results = save_files_impl(
             vec![
-                Move {
+                SaveCopy {
                     from: valid.to_string_lossy().into_owned(),
                     to: out.join("valid.jpg").to_string_lossy().into_owned(),
                 },
-                Move {
+                SaveCopy {
                     from: run.join("missing.jpg").to_string_lossy().into_owned(),
                     to: out.join("missing.jpg").to_string_lossy().into_owned(),
                 },
@@ -943,7 +909,7 @@ mod tests {
         std::fs::write(&scratch, b"new").unwrap();
 
         let results = save_files_impl(
-            vec![Move {
+            vec![SaveCopy {
                 from: scratch.to_string_lossy().into_owned(),
                 to: out.join("photo.jpg").to_string_lossy().into_owned(),
             }],

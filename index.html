@@ -28,11 +28,10 @@
       </label>
       <p id="save-loc-label" class="save-loc-label">Save To</p>
       <div class="save-destination-actions" role="group" aria-label="Save Destination">
-        <button id="save-original" type="button" class="primary compact-action" aria-pressed="true">Original Folder</button>
-        <button id="save-change" type="button" class="primary compact-action" aria-pressed="false">Choose Folder</button>
+        <button id="save-change" type="button" class="primary compact-action">Choose Folder</button>
       </div>
       <div class="save-loc">
-        <div id="save-location" class="save-locbox"></div>
+        <input id="save-location" class="save-locbox" type="text" autocomplete="off" aria-label="Target Folder Path" />
       </div>
       <div class="save-actions">
         <button id="save-cancel" type="button" class="primary compact-action">Cancel</button>
@@ -146,7 +145,6 @@
           <div class="queue-heading">
             <div>
               <h2>Image Queue</h2>
-              <span id="summary"></span>
             </div>
             <div class="queue-actions">
               <button id="remove-selected" type="button" class="primary compact-action" hidden>Remove Selected (0)</button>
@@ -164,11 +162,16 @@
 
           <section class="queue">
             <table>
+              <colgroup>
+                <col class="queue-col-file" />
+                <col class="queue-col-size" />
+                <col class="queue-col-result" />
+                <col class="queue-col-remove" />
+              </colgroup>
               <thead>
                 <tr>
                   <th>File</th>
-                  <th>Size</th>
-                  <th>Current Dimension</th>
+                  <th>Size Curr/New</th>
                   <th>Result</th>
                   <th>Remove</th>
                 </tr>
@@ -179,6 +182,7 @@
           </section>
 
           <footer>
+            <span id="summary"></span>
             <span class="spacer"></span>
             <button id="convert" type="button" class="primary main-action" disabled>Convert</button>
             <button id="save" type="button" class="primary main-action" disabled>Save</button>
@@ -187,6 +191,6 @@
       </div>
     </div>
 
-    <script type="module" src="/src/main.ts"></script>
+    <script type="module" src="/src/bootstrap.ts"></script>
   </body>
 </html>

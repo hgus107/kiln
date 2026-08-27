@@ -8,14 +8,14 @@ Converting a HEIC from your phone into a JPEG means, today, uploading it to a we
 
 There is no reason for that. The conversion is a local operation. The libraries that do it are free, fast, and decades mature. The only thing missing is a decent interface.
 
-Kiln is that interface. It runs on your computer, it has no network code in it, and it does not care how many files you give it.
+Kiln is that interface. It runs on your computer, has no network code, plus supports large local batches with a 20,000-file intake boundary.
 
 ## What it does
 
 - Converts between HEIC, AVIF, WebP, JPEG, PNG, and TIFF
-- Batch conversion — hundreds of files, one queue
-- Quality control, applied to the whole batch
-- Resize by longest edge or percentage, applied to the whole batch. Never upscales
+- Batch conversion — up to 20,000 collected files per selection
+- Compression quality from 40–100 for JPEG, WebP, AVIF, and HEIC
+- Optional exact dimensions from 1024 × 1024 through 7680 × 7680, assignable per row or selection
 - Strips or keeps metadata, your choice — including GPS, camera serial, and C2PA / AI-generation tags
 - One bad file fails on its own row instead of killing the run
 
@@ -36,7 +36,7 @@ One honest limit: this removes metadata, and metadata only. Google's SynthID wat
 | The web converters | Kiln |
 |---|---|
 | Your file is uploaded to a stranger's server | Nothing leaves the disk |
-| 5 files per batch, 100 MB limit | No limits |
+| 5 files per batch, 100 MB limit | Up to 20,000 collected files per selection |
 | Wait in a queue behind other people's jobs | Runs at the speed of your CPU |
 | Ads, popups, "upgrade to Pro" | None |
 | Output arrives as a zip you have to unpack | Files written straight to the folder you picked |
@@ -48,11 +48,11 @@ One honest limit: this removes metadata, and metadata only. Google's SynthID wat
 > Pre-release. There is no installer to download yet. This is the intended flow.
 
 1. Drag files or a folder onto the window.
-2. Pick an output format, and a quality or size if the format takes one.
-3. Choose where the results go — next to the originals, or a folder you name.
-4. Press Convert. The list fills in row by row as each file finishes.
+2. Pick an output format, compression quality, plus optional exact dimensions.
+3. Press Convert. The list fills in row by row as each file finishes.
+4. Press Save, then choose or type the target folder.
 
-Originals are never modified or deleted.
+Originals remain untouched unless the user deliberately saves the same type, name, plus folder then confirms replacement.
 
 ## Tech stack
 
@@ -74,9 +74,9 @@ The frontend hands Rust a list of paths plus the output settings. Rust builds on
 Note that resizing and quality are separate controls doing separate jobs. Resize changes pixel dimensions. Quality changes how hard the encoder compresses what is left. File size falls out of both, and neither is a target-size setting — encoding to a specific number of megabytes takes repeated re-encodes per file and is not in v1.
 
 **Distribution**
-- `tauri build` produces a signed `.dmg`, `.msi`, and `.AppImage`, with the vips shared libraries bundled alongside the binary.
-- macOS builds are notarized so Gatekeeper opens them without the right-click dance.
-- Homebrew tap for `brew install --cask kiln`.
+- `npm run package:mac` builds a macOS `.app` plus `.dmg`, bundles libvips, and names the disk image for the machine architecture.
+- Local development packages use compatible ad-hoc signing. A public release requires `KILN_SIGNING_IDENTITY` plus `KILN_NOTARY_PROFILE`; the packaging script then enables hardened runtime, notarizes, plus staples the ticket.
+- Windows plus Linux packages are not currently built or verified by this repository.
 
 ## License
 

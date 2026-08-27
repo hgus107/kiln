@@ -9,7 +9,7 @@ This document records the finalized behavior decisions for the approved Option 1
 3. Up Arrow moves the active selection to the previous row.
 4. Down Arrow moves the active selection to the next row.
 5. Mouse wheel scrolls the queue.
-6. Shift+Click selects a continuous row range.
+6. Shift+Click toggles only the clicked row in the multi-selection.
 7. Shift+Arrow extends a continuous row range.
 8. Command+A selects every row on macOS.
 9. Control+A selects every row on Windows.
@@ -203,10 +203,9 @@ This document records the finalized behavior decisions for the approved Option 1
 1. Save stays visible in a disabled state before conversion.
 2. Save becomes enabled after at least one successful conversion.
 3. Clicking Save opens destination choices.
-4. Original Folder is the default destination for one image.
-5. Original Folders is the default destination for a batch.
-6. A mixed-folder batch saves each image beside its own original.
-7. Choose Folder saves every successful converted image into one selected folder.
+4. The editable Target Folder initially shows the first eligible image's source folder.
+5. Choose Folder replaces the Target Folder with one selected folder.
+6. Every eligible image is saved into that Target Folder.
 8. Cancelling the folder picker keeps the current destination choice.
 9. A single image shows an editable File Name plus its fixed converted extension.
 10. A timestamped conversion keeps its timestamp in the default File Name.
@@ -224,8 +223,8 @@ This document records the finalized behavior decisions for the approved Option 1
 22. Saving disables Convert, Clear All, Choose Files, Remove Selected, Remove, plus repeated Save clicks until completion.
 23. One failed save does not stop successful files.
 24. Successful rows show Saved.
-25. Failed rows show Failed plus retain their temporary result for retry.
-26. Save can retry failed rows without relying on the Format control.
+25. Failed save rows show Failed plus retain their temporary result for retry.
+26. Save remains enabled for failed save rows plus can retry them without reconversion.
 27. Saved, Failed, plus Cancelled rows remain available for Clear.
 28. Clear or Remove after Save never deletes destination files.
 

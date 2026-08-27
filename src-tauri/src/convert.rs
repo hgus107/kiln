@@ -35,10 +35,6 @@ impl OutputFormat {
 pub enum Resize {
     /// Leave the pixel dimensions alone.
     Original,
-    /// Fit inside a box this many pixels on its longest side.
-    Longest { px: i32 },
-    /// Scale to a percentage of the original.
-    Percent { pct: f64 },
     /// Produce the exact requested width and height.
     Exact { width: i32, height: i32 },
 }
@@ -52,14 +48,11 @@ pub struct Settings {
     pub resize: Resize,
     /// False strips EXIF, XMP, IPTC and any C2PA/AI-generation tags with them.
     pub keep_metadata: bool,
-    /// None writes each result beside its original.
-    pub destination: Option<String>,
+    /// Private scratch directory used until the user saves the result.
+    pub destination: String,
     /// Appended to every name in the batch, before the extension. The frontend
     /// stamps one value per run so a batch shares it.
     pub suffix: Option<String>,
-    /// An explicit output file path for a single-file save. When set it wins
-    /// over `destination`; the source itself is never overwritten.
-    pub output_path: Option<String>,
 }
 
 /// What the frontend shows in a row before anything is converted.
@@ -136,16 +129,6 @@ pub fn convert_one(source: &Path, settings: &Settings) -> Result<PathBuf, String
 
     let (target_width, target_height, thumbnail_size) = match settings.resize {
         Resize::Original => (longest, longest, ops::Size::Down),
-        // Never upscale: asking for 4000px from a 1000px source returns 1000px.
-        Resize::Longest { px } => {
-            let target = px.min(longest).max(1);
-            (target, target, ops::Size::Down)
-        }
-        Resize::Percent { pct } => {
-            let target = ((longest as f64) * pct.clamp(1.0, 100.0) / 100.0).round() as i32;
-            let target = target.max(1);
-            (target, target, ops::Size::Down)
-        }
         Resize::Exact { width, height } => {
             if !exact_dimensions_valid(width, height) {
                 return Err("dimensions must be between 1024 px and 7680 px".to_string());
@@ -174,45 +157,16 @@ pub fn convert_one(source: &Path, settings: &Settings) -> Result<PathBuf, String
     };
     let image = ops::thumbnail_with_opts(source_str, target_width, &options).map_err(vips_error)?;
 
-    // A single-file save names the exact output; a batch names a folder and keeps
-    // each source's own name.
-    let out_path = if let Some(explicit) = &settings.output_path {
-        let explicit = PathBuf::from(explicit);
-        if let Some(parent) = explicit.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
-        // Never clobber the source itself; fall back to a free name beside it.
-        if explicit == *source {
-            let directory = explicit
-                .parent()
-                .ok_or_else(|| "file has no parent directory".to_string())?;
-            reserve_path(
-                directory,
-                source,
-                settings.format,
-                settings.suffix.as_deref(),
-            )?
-        } else {
-            explicit
-        }
-    } else {
-        let destination = match &settings.destination {
-            Some(dir) => PathBuf::from(dir),
-            None => source
-                .parent()
-                .ok_or_else(|| "file has no parent directory".to_string())?
-                .to_path_buf(),
-        };
-        std::fs::create_dir_all(&destination).map_err(|e| e.to_string())?;
-        // Reserved before the write, so neither an existing file nor another
-        // worker in this same batch is overwritten.
-        reserve_path(
-            &destination,
-            source,
-            settings.format,
-            settings.suffix.as_deref(),
-        )?
-    };
+    let destination = PathBuf::from(&settings.destination);
+    std::fs::create_dir_all(&destination).map_err(|e| e.to_string())?;
+    // Reserved before the write, so neither an existing file nor another worker
+    // in this same batch is overwritten.
+    let out_path = reserve_path(
+        &destination,
+        source,
+        settings.format,
+        settings.suffix.as_deref(),
+    )?;
     let out_str = out_path
         .to_str()
         .ok_or_else(|| "output path is not valid UTF-8".to_string())?;
@@ -389,35 +343,9 @@ mod tests {
             quality: 80,
             resize,
             keep_metadata,
-            destination: Some(out.to_string_lossy().into_owned()),
+            destination: out.to_string_lossy().into_owned(),
             suffix: None,
-            output_path: None,
         }
-    }
-
-    #[test]
-    fn converts_and_resizes_to_the_longest_edge() {
-        vips();
-        let directory = std::env::temp_dir().join("kiln-test-longest");
-        let _ = std::fs::remove_dir_all(&directory);
-        std::fs::create_dir_all(&directory).unwrap();
-        let source = fixture(&directory);
-
-        let output = convert_one(
-            &source,
-            &settings(
-                OutputFormat::Webp,
-                Resize::Longest { px: 800 },
-                false,
-                &directory,
-            ),
-        )
-        .unwrap();
-
-        assert_eq!(output.extension().unwrap(), "webp");
-        let result = VipsImage::new_from_file(output.to_str().unwrap()).unwrap();
-        assert_eq!(result.get_width(), 800);
-        assert_eq!(result.get_height(), 450);
     }
 
     #[test]
@@ -491,53 +419,6 @@ mod tests {
         assert_eq!(normalized_quality(80), 80);
         assert_eq!(normalized_quality(100), 100);
         assert_eq!(normalized_quality(101), 100);
-    }
-
-    #[test]
-    fn never_upscales() {
-        vips();
-        let directory = std::env::temp_dir().join("kiln-test-upscale");
-        let _ = std::fs::remove_dir_all(&directory);
-        std::fs::create_dir_all(&directory).unwrap();
-        let source = fixture(&directory);
-
-        let output = convert_one(
-            &source,
-            &settings(
-                OutputFormat::Jpeg,
-                Resize::Longest { px: 5000 },
-                false,
-                &directory,
-            ),
-        )
-        .unwrap();
-
-        let result = VipsImage::new_from_file(output.to_str().unwrap()).unwrap();
-        assert_eq!(result.get_width(), 1600);
-    }
-
-    #[test]
-    fn percentage_scales_both_edges() {
-        vips();
-        let directory = std::env::temp_dir().join("kiln-test-percent");
-        let _ = std::fs::remove_dir_all(&directory);
-        std::fs::create_dir_all(&directory).unwrap();
-        let source = fixture(&directory);
-
-        let output = convert_one(
-            &source,
-            &settings(
-                OutputFormat::Png,
-                Resize::Percent { pct: 25.0 },
-                false,
-                &directory,
-            ),
-        )
-        .unwrap();
-
-        let result = VipsImage::new_from_file(output.to_str().unwrap()).unwrap();
-        assert_eq!(result.get_width(), 400);
-        assert_eq!(result.get_height(), 225);
     }
 
     #[test]

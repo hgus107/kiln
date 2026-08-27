@@ -224,6 +224,7 @@ button {
   min-height: 18px;
   color: var(--muted);
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .drop {
@@ -327,6 +328,7 @@ button:disabled {
 
 table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
 }
 
@@ -346,6 +348,11 @@ th {
   white-space: nowrap;
 }
 
+th,
+td {
+  box-sizing: border-box;
+}
+
 td {
   max-width: 0;
   padding: 11px 12px;
@@ -359,14 +366,28 @@ tbody tr:last-child td {
   border-bottom: 0;
 }
 
+.queue-col-file {
+  width: auto;
+}
+
+.queue-col-size {
+  width: 210px;
+}
+
+.queue-col-result {
+  width: 130px;
+}
+
+.queue-col-remove {
+  width: 92px;
+}
+
 td:first-child {
-  width: 38%;
   font-weight: 600;
 }
 
 th:last-child,
 td:last-child {
-  width: 72px;
   text-align: center;
 }
 
@@ -392,6 +413,12 @@ td:last-child {
 
 tr.selected td {
   background: #fff4ef;
+}
+
+tbody tr,
+tbody td {
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 tr.active td:first-child {
@@ -545,12 +572,6 @@ footer {
   gap: 9px;
 }
 
-.save-destination-actions button[aria-pressed="false"] {
-  border-color: var(--line-strong);
-  background: var(--surface);
-  color: var(--ink);
-}
-
 .save-locbox {
   flex: 1;
   min-width: 0;
@@ -558,9 +579,16 @@ footer {
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 4px;
-  background: var(--surface-soft);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.save-locbox:focus {
+  border-color: var(--accent);
+  outline: 2px solid color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 .save-actions {

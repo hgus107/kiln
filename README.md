@@ -4,6 +4,8 @@ Raw in, finished out. Your photos never leave the machine.
 
 Website: [https://hgus107.github.io/kiln/](https://hgus107.github.io/kiln/)
 
+The shared website opens on Kiln by default and includes Rollcall as its second app tab.
+
 Current release: **v0.1.2**
 
 ## Why this exists
